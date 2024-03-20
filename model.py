@@ -27,11 +27,11 @@ def create_system_rollout(out_model_jax_filepath, observed_node_names):
     system_rollout_config = Dict()
     system_rollout_config.system_type = "grn"
     system_rollout_config.model_filepath = out_model_jax_filepath  # path of model class that we just created
-    system_rollout_config.atol = 1e-6  # parameters for the ODE solver
+    system_rollout_config.atol = 1e-3  # parameters for the ODE solver
     system_rollout_config.rtol = 1e-12
-    system_rollout_config.mxstep = 1000
-    system_rollout_config.deltaT = 0.1  # the ODE solver will compute values every 0.1 second
-    system_rollout_config.n_secs = 1000  # number of a seconds of one rollout in the system
+    system_rollout_config.mxstep = 5000
+    system_rollout_config.deltaT = 0.01  # the ODE solver will compute values every 0.1 second
+    system_rollout_config.n_secs = 25  # number of a seconds of one rollout in the system
     system_rollout_config.n_system_steps = int(
         system_rollout_config.n_secs / system_rollout_config.deltaT)  # total number of steps returned after a rollout
 
