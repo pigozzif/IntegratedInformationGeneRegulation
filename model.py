@@ -4,42 +4,57 @@ import os
 import sbmltoodejax
 
 
-def create_model(biomodel_idx):
-    out_model_sbml_filepath = f"data/biomodel_{biomodel_idx}.xml"
-    out_model_jax_filepath = f"data/biomodel_{biomodel_idx}.py"
+class GeneRegulatoryNetwork(object):
 
-    # Donwload the SBML file
-    if not os.path.exists(out_model_sbml_filepath):
-        model_xml_body = sbmltoodejax.biomodels_api.get_content_for_model(biomodel_idx)
-        with open(out_model_sbml_filepath, 'w') as f:
-            f.write(model_xml_body)
+    def __init__(self,
+                 observed_node_names,
+                 model_filepath,
+                 system_type="grn",
+                 atol=1e-3,
+                 rtol=1e-12,
+                 mxstep=5000,
+                 deltaT=0.01,
+                 n_secs=25):
+        self.config = Dict()
+        self.config.system_type = system_type
+        self.config.model_filepath = model_filepath  # path of model class that we just created
+        self.config.atol = atol  # parameters for the ODE solver
+        self.config.rtol = rtol
+        self.config.mxstep = mxstep
+        self.config.deltaT = deltaT  # the ODE solver will compute values every 0.1 second
+        self.config.n_secs = n_secs  # number of a seconds of one rollout in the system
+        self.config.n_system_steps = int(
+            self.config.n_secs / self.config.deltaT)  # total number of steps returned after a rollout
 
-    # Generation of the python class from the SBML file
-    if not os.path.exists(out_model_jax_filepath):
-        model_data = sbmltoodejax.parse.ParseSBMLFile(out_model_sbml_filepath)
-        sbmltoodejax.modulegeneration.GenerateModel(model_data, out_model_jax_filepath)
+        # Create the module
+        self.system = create_system_rollout_module(self.config)
 
-    return out_model_sbml_filepath, out_model_jax_filepath
+        # Get observed node ids
+        self.observed_node_ids = [self.system.grn_step.y_indexes[name] for name in observed_node_names]
 
+    def __call__(self,
+                 key,
+                 intervantion_fn=None,
+                 intervention_params=None,
+                 perturbation_fn=None,
+                 perturbation_params=None):
+        return self.system(key, intervantion_fn, intervention_params, perturbation_fn, perturbation_params)
 
-def create_system_rollout(out_model_jax_filepath, observed_node_names):
-    # System Rollout Config
-    system_rollout_config = Dict()
-    system_rollout_config.system_type = "grn"
-    system_rollout_config.model_filepath = out_model_jax_filepath  # path of model class that we just created
-    system_rollout_config.atol = 1e-3  # parameters for the ODE solver
-    system_rollout_config.rtol = 1e-12
-    system_rollout_config.mxstep = 5000
-    system_rollout_config.deltaT = 0.01  # the ODE solver will compute values every 0.1 second
-    system_rollout_config.n_secs = 25  # number of a seconds of one rollout in the system
-    system_rollout_config.n_system_steps = int(
-        system_rollout_config.n_secs / system_rollout_config.deltaT)  # total number of steps returned after a rollout
+    @classmethod
+    def create(cls, biomodel_idx, observed_node_names):
+        out_model_sbml_filepath = f"data/biomodel_{biomodel_idx}.xml"
+        out_model_jax_filepath = f"data/biomodel_{biomodel_idx}.py"
 
-    # Create the module
-    system_rollout = create_system_rollout_module(system_rollout_config)
+        # Donwload the SBML file
+        if not os.path.exists(out_model_sbml_filepath):
+            model_xml_body = sbmltoodejax.biomodels_api.get_content_for_model(biomodel_idx)
+            with open(out_model_sbml_filepath, "w") as f:
+                f.write(model_xml_body)
 
-    # Get observed node ids
-    observed_node_ids = [system_rollout.grn_step.y_indexes[observed_node_names[0]],
-                         system_rollout.grn_step.y_indexes[observed_node_names[1]]]
+        # Generation of the python class from the SBML file
+        if not os.path.exists(out_model_jax_filepath):
+            model_data = sbmltoodejax.parse.ParseSBMLFile(out_model_sbml_filepath)
+            sbmltoodejax.modulegeneration.GenerateModel(model_data, out_model_jax_filepath)
 
-    return system_rollout, system_rollout_config, observed_node_ids
+        return GeneRegulatoryNetwork(observed_node_names=observed_node_names,
+                                     model_filepath=out_model_jax_filepath)
