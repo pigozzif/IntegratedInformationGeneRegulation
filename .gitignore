@@ -8,3 +8,5 @@
 *.json
 *.mp4
 *.mov
+data/*
+figures/*
