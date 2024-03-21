@@ -2,6 +2,7 @@ from addict import Dict
 from autodiscjax.utils.create_modules import *
 import os
 import sbmltoodejax
+import jax.random as jrandom
 
 
 class GeneRegulatoryNetwork(object):
@@ -30,18 +31,20 @@ class GeneRegulatoryNetwork(object):
         self.system = create_system_rollout_module(self.config)
 
         # Get observed node ids
-        self.observed_node_ids = [self.system.grn_step.y_indexes[name] for name in observed_node_names]
+        self.observed_node_ids = [self.system.grn_step.y_indexes[name] for name in observed_node_names] \
+            if observed_node_names is not None else []
 
     def __call__(self,
                  key,
-                 intervantion_fn=None,
+                 intervention_fn=None,
                  intervention_params=None,
                  perturbation_fn=None,
                  perturbation_params=None):
-        return self.system(key, intervantion_fn, intervention_params, perturbation_fn, perturbation_params)
+        key, subkey = jrandom.split(key)
+        return self.system(subkey, intervention_fn, intervention_params, perturbation_fn, perturbation_params)
 
     @classmethod
-    def create(cls, biomodel_idx, observed_node_names):
+    def create(cls, biomodel_idx, observed_node_names=None):
         out_model_sbml_filepath = f"data/biomodel_{biomodel_idx}.xml"
         out_model_jax_filepath = f"data/biomodel_{biomodel_idx}.py"
 

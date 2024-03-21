@@ -3,7 +3,6 @@ import jax
 jax.config.update("jax_platform_name", "cpu")
 
 import warnings
-import jax.random as jrandom
 
 from plotting import *
 from model import *
@@ -22,8 +21,7 @@ if __name__ == "__main__":
 
     grn = GeneRegulatoryNetwork.create(biomodel_idx=biomodel_idx,
                                        observed_node_names=observed_node_names)
-    key, subkey = jrandom.split(key)
-    default_system_outputs, log_data = grn(subkey)
+    default_system_outputs, log_data = grn(key)
     fig_idx = 1
 
     fig1 = plot_states_trajectory(fig_name=f"figures/tuto1_fig_{fig_idx}.json",
