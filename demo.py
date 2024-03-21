@@ -33,7 +33,7 @@ if __name__ == "__main__":
 
     fig2 = plot_observed_nodes_trajectory(fig_name=f"figures/tuto1_fig_{fig_idx}.json",
                                           system_outputs=default_system_outputs,
-                                          observed_node_ids=grn.observed_node_ids,
+                                          observed_node_ids=grn.get_observed_node_ids(),
                                           system_rollout_config=grn.config,
                                           observed_node_names=observed_node_names)
 

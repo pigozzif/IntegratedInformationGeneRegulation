@@ -31,8 +31,7 @@ class GeneRegulatoryNetwork(object):
         self.system = create_system_rollout_module(self.config)
 
         # Get observed node ids
-        self.observed_node_ids = [self.system.grn_step.y_indexes[name] for name in observed_node_names] \
-            if observed_node_names is not None else []
+        self.observed_node_names = observed_node_names
 
     def __call__(self,
                  key,
@@ -41,7 +40,12 @@ class GeneRegulatoryNetwork(object):
                  perturbation_fn=None,
                  perturbation_params=None):
         key, subkey = jrandom.split(key)
-        return self.system(subkey, intervention_fn, intervention_params, perturbation_fn, perturbation_params)
+        system = create_system_rollout_module(self.config)
+        return system(subkey, intervention_fn, intervention_params, perturbation_fn, perturbation_params)
+
+    def get_observed_node_ids(self):
+        return [create_system_rollout_module(self.config).grn_step.y_indexes[name]
+                for name in self.observed_node_names] if self.observed_node_names is not None else []
 
     @classmethod
     def create(cls, biomodel_idx, observed_node_names=None):
