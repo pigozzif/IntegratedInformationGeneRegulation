@@ -36,33 +36,40 @@ def get_R_US_NS_exhaustive(model, X1, ref, r, scale, k):
             if response == stimulus:
                 continue
             for reg in [Regulation(1), Regulation(2)]:
-                intervention_params = DictTree()
-                intervention_params.y[stimulus] = jnp.array([r[stimulus, int(reg) - 1]])
-                intervention_fn = grnwrappers.PiecewiseSetConstantIntervention(
-                    time_to_interval_fn=grnwrappers.TimeToInterval(intervals=[[0, model.config.n_secs]]))
-                X2, _ = model(key=k,
-                              intervention_fn=intervention_fn,
-                              intervention_params=intervention_params)
-                if np.mean(X2.ys[response, :]) >= scale * np.mean(X1[response, :]) and np.mean(
-                        X2.ys[response, :]) >= scale * np.mean(ref[response, :]):
-                    curr_us.append(MemoryCircuit(stimulus=stimulus,
-                                                 response=response,
-                                                 stimulus_reg=reg,
-                                                 response_reg=Regulation(1)))
-                elif np.mean(X2.ys[response, :]) < (1 / scale) * np.mean(X1[response, :]) and np.mean(
-                        X2.ys[response, :]) < (1 / scale) * np.mean(ref[response, :]):
-                    curr_us.append(MemoryCircuit(stimulus=stimulus,
-                                                 response=response,
-                                                 stimulus_reg=reg,
-                                                 response_reg=Regulation(2)))
+                is_ucs, ucs_or_cs = set_UCS_for_R(model, response, stimulus, X1, ref, r, scale, k, reg)
+                if is_ucs:
+                    curr_us.append(ucs_or_cs)
                 else:
-                    curr_cs.append(MemoryCircuit(stimulus=stimulus,
-                                                 response=-1,
-                                                 stimulus_reg=reg,
-                                                 response_reg=Regulation(0)))
+                    curr_cs.append(ucs_or_cs)
         us.append(curr_us)
         cs.append(curr_cs)
     return us, cs
+
+
+def set_UCS_for_R(model, response, stimulus, X1, ref, r, scale, k, reg):
+    intervention_params = DictTree()
+    intervention_params.y[stimulus] = jnp.array([r[stimulus, int(reg) - 1]])
+    intervention_fn = grnwrappers.PiecewiseSetConstantIntervention(
+        time_to_interval_fn=grnwrappers.TimeToInterval(intervals=[[0, model.config.n_secs]]))
+    X2, _ = model(key=k,
+                  intervention_fn=intervention_fn,
+                  intervention_params=intervention_params)
+    if np.mean(X2.ys[response, :]) >= scale * np.mean(X1[response, :]) and np.mean(
+            X2.ys[response, :]) >= scale * np.mean(ref[response, :]):
+        return True, MemoryCircuit(stimulus=stimulus,
+                                   response=response,
+                                   stimulus_reg=reg,
+                                   response_reg=Regulation(1))
+    elif np.mean(X2.ys[response, :]) < (1 / scale) * np.mean(X1[response, :]) and np.mean(
+            X2.ys[response, :]) < (1 / scale) * np.mean(ref[response, :]):
+        return True, MemoryCircuit(stimulus=stimulus,
+                                   response=response,
+                                   stimulus_reg=reg,
+                                   response_reg=Regulation(2))
+    return False, MemoryCircuit(stimulus=stimulus,
+                                response=-1,
+                                stimulus_reg=reg,
+                                response_reg=Regulation(0))
 
 
 if __name__ == "__main__":
