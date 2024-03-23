@@ -15,7 +15,7 @@ class GeneRegulatoryNetwork(object):
                  rtol=1e-12,
                  mxstep=5000,
                  deltaT=0.01,
-                 n_secs=25):
+                 n_secs=2500):
         self.config = Dict()
         self.config.system_type = system_type
         self.config.model_filepath = model_filepath  # path of model class that we just created
@@ -26,10 +26,8 @@ class GeneRegulatoryNetwork(object):
         self.config.n_secs = n_secs  # number of a seconds of one rollout in the system
         self.config.n_system_steps = int(
             self.config.n_secs / self.config.deltaT)  # total number of steps returned after a rollout
-
         # Create the module
         self.system = create_system_rollout_module(self.config)
-
         # Get observed node ids
         self.observed_node_names = observed_node_names
 
@@ -40,8 +38,7 @@ class GeneRegulatoryNetwork(object):
                  perturbation_fn=None,
                  perturbation_params=None):
         key, subkey = jrandom.split(key)
-        system = create_system_rollout_module(self.config)
-        return system(subkey, intervention_fn, intervention_params, perturbation_fn, perturbation_params)
+        return self.system(subkey, intervention_fn, intervention_params, perturbation_fn, perturbation_params)
 
     def get_observed_node_ids(self):
         return [create_system_rollout_module(self.config).grn_step.y_indexes[name]
