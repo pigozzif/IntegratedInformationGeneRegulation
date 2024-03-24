@@ -19,6 +19,7 @@ class MemoryCircuit(object):
     response: int
     stimulus_reg: Regulation
     response_reg: Regulation
+    is_ucs: bool
 
 
 def get_bounds(X):
@@ -29,21 +30,16 @@ def get_bounds(X):
 
 
 def get_R_US_NS_exhaustive(model, X1, ref, r, scale, k):
-    us, cs = [], []
+    circuits = []
     for response in range(len(X1)):
-        curr_us, curr_cs = [], []
+        curr_circuits = []
         for stimulus in range(len(X1)):
             if response == stimulus:
                 continue
             for reg in [Regulation(1), Regulation(2)]:
-                is_ucs, ucs_or_cs = set_UCS_for_R(model, response, stimulus, X1, ref, r, scale, k, reg)
-                if is_ucs:
-                    curr_us.append(ucs_or_cs)
-                else:
-                    curr_cs.append(ucs_or_cs)
-        us.append(curr_us)
-        cs.append(curr_cs)
-    return us, cs
+                curr_circuits.append(set_UCS_for_R(model, response, stimulus, X1, ref, r, scale, k, reg))
+        circuits.append(curr_circuits)
+    return circuits
 
 
 def set_UCS_for_R(model, response, stimulus, X1, ref, r, scale, k, reg):
@@ -56,20 +52,23 @@ def set_UCS_for_R(model, response, stimulus, X1, ref, r, scale, k, reg):
                   intervention_params=intervention_params)
     if np.mean(X2.ys[response, :]) >= scale * np.mean(X1[response, :]) and np.mean(
             X2.ys[response, :]) >= scale * np.mean(ref[response, :]):
-        return True, MemoryCircuit(stimulus=stimulus,
-                                   response=response,
-                                   stimulus_reg=reg,
-                                   response_reg=Regulation(1))
+        return MemoryCircuit(stimulus=stimulus,
+                             response=response,
+                             stimulus_reg=reg,
+                             response_reg=Regulation(1),
+                             is_ucs=True)
     elif np.mean(X2.ys[response, :]) < (1 / scale) * np.mean(X1[response, :]) and np.mean(
             X2.ys[response, :]) < (1 / scale) * np.mean(ref[response, :]):
-        return True, MemoryCircuit(stimulus=stimulus,
-                                   response=response,
-                                   stimulus_reg=reg,
-                                   response_reg=Regulation(2))
-    return False, MemoryCircuit(stimulus=stimulus,
-                                response=-1,
-                                stimulus_reg=reg,
-                                response_reg=Regulation(0))
+        return MemoryCircuit(stimulus=stimulus,
+                             response=response,
+                             stimulus_reg=reg,
+                             response_reg=Regulation(2),
+                             is_ucs=True)
+    return MemoryCircuit(stimulus=stimulus,
+                         response=response,
+                         stimulus_reg=reg,
+                         response_reg=Regulation(0),
+                         is_ucs=False)
 
 
 if __name__ == "__main__":
@@ -84,5 +83,4 @@ if __name__ == "__main__":
     regulation = get_bounds(X=relax_output.ys)
     regulation[:, 0] /= US_scale_up
     regulation[:, 1] *= US_scale_up
-    us, cs = get_R_US_NS_exhaustive(grn, relax_output.ys, relax_output.ys, regulation, R_scale_up, key)
-    print(len(us), len(cs))
+    circuits = get_R_US_NS_exhaustive(grn, relax_output.ys, relax_output.ys, regulation, R_scale_up, key)
