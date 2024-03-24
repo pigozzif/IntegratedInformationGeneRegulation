@@ -50,7 +50,7 @@ def set_UCS_for_R(model, response, stimulus, X1, ref, r, scale, k, reg):
     intervention_params = DictTree()
     intervention_params.y[stimulus] = jnp.array([r[stimulus, int(reg) - 1]])
     intervention_fn = grnwrappers.PiecewiseSetConstantIntervention(
-        time_to_interval_fn=grnwrappers.TimeToInterval(intervals=[[0, model.config.n_secs]]))
+        time_to_interval_fn=grnwrappers.TimeToInterval(intervals=[[0, model.config.n_secs * 2]]))
     X2, _ = model(key=k,
                   intervention_fn=intervention_fn,
                   intervention_params=intervention_params)
@@ -85,3 +85,4 @@ if __name__ == "__main__":
     regulation[:, 0] /= US_scale_up
     regulation[:, 1] *= US_scale_up
     us, cs = get_R_US_NS_exhaustive(grn, relax_output.ys, relax_output.ys, regulation, R_scale_up, key)
+    print(len(us), len(cs))
