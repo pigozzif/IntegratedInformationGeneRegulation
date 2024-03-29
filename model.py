@@ -40,6 +40,12 @@ class GeneRegulatoryNetwork(object):
         key, subkey = jrandom.split(key)
         return self.system(subkey, intervention_fn, intervention_params, perturbation_fn, perturbation_params)
 
+    def __iter__(self):
+        return iter(self.system.grn_step.y_indexes.items())
+
+    def __next__(self):
+        return next(self.system.grn_step.y_indexes.items())
+
     def get_observed_node_ids(self):
         return [create_system_rollout_module(self.config).grn_step.y_indexes[name]
                 for name in self.observed_node_names] if self.observed_node_names is not None else []
