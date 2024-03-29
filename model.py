@@ -33,12 +33,16 @@ class GeneRegulatoryNetwork(object):
 
     def __call__(self,
                  key,
+                 y0=None,
                  intervention_fn=None,
                  intervention_params=None,
                  perturbation_fn=None,
                  perturbation_params=None):
-        key, subkey = jrandom.split(key)
-        return self.system(subkey, intervention_fn, intervention_params, perturbation_fn, perturbation_params)
+        key, skey = jrandom.split(key)
+        if y0 is None:
+            return self.system(skey, intervention_fn, intervention_params, perturbation_fn, perturbation_params)
+        else:
+            return self.system(skey, intervention_fn, intervention_params, perturbation_fn, perturbation_params, y0=y0)
 
     def __iter__(self):
         return iter(self.system.grn_step.y_indexes.items())
