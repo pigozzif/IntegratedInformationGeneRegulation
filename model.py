@@ -13,9 +13,9 @@ class GeneRegulatoryNetwork(object):
                  system_type="grn",
                  atol=1e-3,
                  rtol=1e-12,
-                 mxstep=5000,
+                 mxstep=50000,
                  deltaT=0.01,
-                 n_secs=2500):
+                 n_secs=5 * 2500):
         self.config = Dict()
         self.config.system_type = system_type
         self.config.model_filepath = model_filepath  # path of model class that we just created
@@ -23,32 +23,31 @@ class GeneRegulatoryNetwork(object):
         self.config.rtol = rtol
         self.config.mxstep = mxstep
         self.config.deltaT = deltaT  # the ODE solver will compute values every 0.1 second
-        self.config.n_secs = n_secs  # number of a seconds of one rollout in the system
-        self.config.n_system_steps = int(
-            self.config.n_secs / self.config.deltaT)  # total number of steps returned after a rollout
-        # Create the module
-        self.system = create_system_rollout_module(self.config)
+        self.set_time(secs=n_secs)
         # Get observed node ids
         self.observed_node_names = observed_node_names
 
     def __call__(self,
                  key,
-                 y0=None,
                  intervention_fn=None,
                  intervention_params=None,
                  perturbation_fn=None,
                  perturbation_params=None):
         key, skey = jrandom.split(key)
-        if y0 is None:
-            return self.system(skey, intervention_fn, intervention_params, perturbation_fn, perturbation_params)
-        else:
-            return self.system(skey, intervention_fn, intervention_params, perturbation_fn, perturbation_params, y0=y0)
+        return self.system(skey, intervention_fn, intervention_params, perturbation_fn, perturbation_params)
 
     def __iter__(self):
         return iter(self.system.grn_step.y_indexes.items())
 
     def __next__(self):
         return next(self.system.grn_step.y_indexes.items())
+
+    def set_time(self, secs):
+        self.config.n_secs = secs
+        self.config.n_system_steps = int(
+            self.config.n_secs / self.config.deltaT)  # total number of steps returned after a rollout
+        # Create the module
+        self.system = create_system_rollout_module(self.config)
 
     def get_observed_node_ids(self):
         return [create_system_rollout_module(self.config).grn_step.y_indexes[name]

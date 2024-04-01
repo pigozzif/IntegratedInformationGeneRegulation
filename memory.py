@@ -27,12 +27,14 @@ def simulate_network(model, y0, stimulus, r, reg, k):
         stimulus = [stimulus]
     if not isinstance(reg, list):
         reg = [reg]
+    for s, regulation in zip(stimulus, reg):
+        y0 = y0.at[s].set(r[s, int(regulation) % 2])
     intervention_params = DictTree()
-    intervention_params.y[stimulus] = jnp.array([r[s, int(regulation) % 2] for s, regulation in zip(stimulus, reg)])  # CHECK
+    for s, y in enumerate(y0):
+        intervention_params.y[s] = jnp.array([y])
     intervention_fn = grnwrappers.PiecewiseSetConstantIntervention(
-        time_to_interval_fn=grnwrappers.TimeToInterval(intervals=[[0, model.config.n_secs * 2] for _ in stimulus]))
+        time_to_interval_fn=grnwrappers.TimeToInterval(intervals=[[0, model.config.n_secs * 2] for _ in y0]))
     X, _ = model(key=k,
-                 y0=y0,
                  intervention_fn=intervention_fn,
                  intervention_params=intervention_params)
     return X
@@ -59,7 +61,7 @@ def get_R_US_NS_exhaustive(model, X1, ref, r, scale, k):
 
 
 def set_UCS_for_R(model, response, stimulus, X1, ref, r, scale, k, reg):
-    X2 = simulate_network(model, X1.ys[:, -1], stimulus, r, reg, k)
+    X2 = simulate_network(model, X1[:, -1], stimulus, r, reg, k)
     if np.mean(X2.ys[response, :]) >= scale * np.mean(X1[response, :]) and np.mean(
             X2.ys[response, :]) >= scale * np.mean(ref[response, :]):
         return MemoryCircuit(stimulus=stimulus,
@@ -144,14 +146,20 @@ if __name__ == "__main__":
     np.random.seed(0)
     US_scale_up = 100.0
     R_scale_up = 2.0
+    sim_cnt = 2500
 
     grn = GeneRegulatoryNetwork.create(biomodel_idx=4)
     relax_output, _ = grn(key=key)
+    grn.set_time(secs=sim_cnt)
     regulation = get_bounds(X=relax_output.ys)
     regulation[:, 0] /= US_scale_up
     regulation[:, 1] *= US_scale_up
-    circuits = get_R_US_NS_exhaustive(grn, relax_output.ys, relax_output.ys, regulation, R_scale_up, key)
-
+    circuits = get_R_US_NS_exhaustive(model=grn,
+                                      X1=relax_output.ys[:, :int(sim_cnt / grn.config.deltaT)],
+                                      ref=relax_output.ys,
+                                      r=regulation,
+                                      scale=R_scale_up,
+                                      k=key)
     for r, idx in grn:
         if circuits[idx]:
             mem_eval_us_r(grn, relax_output.ys, relax_output.ys, circuits[idx], regulation, R_scale_up, key)
