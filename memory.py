@@ -2,6 +2,8 @@ import dataclasses
 from enum import IntEnum
 
 import numpy as np
+import jax.numpy as jnp
+from autodiscjax import DictTree
 from autodiscjax.modules import grnwrappers
 
 from model import *
@@ -27,14 +29,13 @@ def simulate_network(model, y0, stimulus, r, reg, k):
         stimulus = [stimulus]
     if not isinstance(reg, list):
         reg = [reg]
-    for s, regulation in zip(stimulus, reg):
-        y0 = y0.at[s].set(r[s, int(regulation) % 2])
     intervention_params = DictTree()
-    for s, y in enumerate(y0):
-        intervention_params.y[s] = jnp.array([y])
+    for s, regulation in zip(stimulus, reg):
+        intervention_params.y[s] = jnp.array([r[s, int(regulation) % 2]])
     intervention_fn = grnwrappers.PiecewiseSetConstantIntervention(
-        time_to_interval_fn=grnwrappers.TimeToInterval(intervals=[[0, model.config.n_secs * 2] for _ in y0]))
+        time_to_interval_fn=grnwrappers.TimeToInterval(intervals=[[0, model.config.n_secs * 2] for _ in stimulus]))
     X, _ = model(key=k,
+                 y0=y0,
                  intervention_fn=intervention_fn,
                  intervention_params=intervention_params)
     return X
@@ -49,9 +50,9 @@ def get_bounds(X):
 
 def get_R_US_NS_exhaustive(model, X1, ref, r, scale, k):
     circuits = []
-    for _, response in model:
+    for response in range(len(X1)):
         curr_circuits = []
-        for _, stimulus in model:
+        for stimulus in range(len(X1)):
             if response == stimulus:
                 continue
             for reg in [Regulation(1), Regulation(2)]:
@@ -99,7 +100,7 @@ def mem_eval_us_r(model, X1, ref, mem_circuits, r, scale, k):
 
 
 def test_us_memory(model, X1, ucs_circuit, r, k):
-    e1 = simulate_network(model, X1.ys[:, -1], ucs_circuit.stimulus, r, ucs_circuit.stimulus_reg, k)
+    e1 = simulate_network(model, X1[:, -1], ucs_circuit.stimulus, r, ucs_circuit.stimulus_reg, k)
     e2 = model(key=k, y0=e1.ys[:, -1])
     return detect_mem(X1, e1, e2, ucs_circuit), e2
 
@@ -149,17 +150,18 @@ if __name__ == "__main__":
     sim_cnt = 2500
 
     grn = GeneRegulatoryNetwork.create(biomodel_idx=4)
-    relax_output, _ = grn(key=key)
-    grn.set_time(secs=sim_cnt)
-    regulation = get_bounds(X=relax_output.ys)
+    reference_output, _ = grn(key=key)
+    grn.set_time(n_secs=sim_cnt)
+    regulation = get_bounds(X=reference_output.ys)
     regulation[:, 0] /= US_scale_up
     regulation[:, 1] *= US_scale_up
     circuits = get_R_US_NS_exhaustive(model=grn,
-                                      X1=relax_output.ys[:, :int(sim_cnt / grn.config.deltaT)],
-                                      ref=relax_output.ys,
+                                      X1=reference_output.ys[:, :int(sim_cnt / grn.config.deltaT)],
+                                      ref=reference_output.ys,
                                       r=regulation,
                                       scale=R_scale_up,
                                       k=key)
-    for r, idx in grn:
-        if circuits[idx]:
-            mem_eval_us_r(grn, relax_output.ys, relax_output.ys, circuits[idx], regulation, R_scale_up, key)
+    exit()
+    for r in range(len(reference_output)):
+        if circuits[r]:
+            mem_eval_us_r(grn, reference_output.ys, reference_output.ys, circuits[r], regulation, R_scale_up, key)

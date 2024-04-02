@@ -1,8 +1,9 @@
 from addict import Dict
-from autodiscjax.utils.create_modules import *
 import os
 import sbmltoodejax
 import jax.random as jrandom
+
+from utils import create_system_rollout_module
 
 
 class GeneRegulatoryNetwork(object):
@@ -23,31 +24,25 @@ class GeneRegulatoryNetwork(object):
         self.config.rtol = rtol
         self.config.mxstep = mxstep
         self.config.deltaT = deltaT  # the ODE solver will compute values every 0.1 second
-        self.set_time(secs=n_secs)
+        self.set_time(n_secs)
         # Get observed node ids
         self.observed_node_names = observed_node_names
 
     def __call__(self,
                  key,
+                 y0=None,
                  intervention_fn=None,
                  intervention_params=None,
                  perturbation_fn=None,
                  perturbation_params=None):
         key, skey = jrandom.split(key)
-        return self.system(skey, intervention_fn, intervention_params, perturbation_fn, perturbation_params)
+        system = create_system_rollout_module(self.config, y0)
+        return system(skey, intervention_fn, intervention_params, perturbation_fn, perturbation_params)
 
-    def __iter__(self):
-        return iter(self.system.grn_step.y_indexes.items())
-
-    def __next__(self):
-        return next(self.system.grn_step.y_indexes.items())
-
-    def set_time(self, secs):
-        self.config.n_secs = secs
+    def set_time(self, n_secs):
+        self.config.n_secs = n_secs
         self.config.n_system_steps = int(
             self.config.n_secs / self.config.deltaT)  # total number of steps returned after a rollout
-        # Create the module
-        self.system = create_system_rollout_module(self.config)
 
     def get_observed_node_ids(self):
         return [create_system_rollout_module(self.config).grn_step.y_indexes[name]
