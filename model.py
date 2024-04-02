@@ -49,7 +49,7 @@ class GeneRegulatoryNetwork(object):
                 for name in self.observed_node_names] if self.observed_node_names is not None else []
 
     @classmethod
-    def create(cls, biomodel_idx, observed_node_names=None):
+    def create(cls, biomodel_idx, observed_node_names=None, **kwargs):
         out_model_sbml_filepath = f"data/biomodel_{biomodel_idx}.xml"
         out_model_jax_filepath = f"data/biomodel_{biomodel_idx}.py"
 
@@ -65,4 +65,5 @@ class GeneRegulatoryNetwork(object):
             sbmltoodejax.modulegeneration.GenerateModel(model_data, out_model_jax_filepath)
 
         return GeneRegulatoryNetwork(observed_node_names=observed_node_names,
-                                     model_filepath=out_model_jax_filepath)
+                                     model_filepath=out_model_jax_filepath,
+                                     **kwargs)

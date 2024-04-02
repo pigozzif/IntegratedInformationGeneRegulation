@@ -43,8 +43,8 @@ def simulate_network(model, y0, stimulus, r, reg, k):
 
 def get_bounds(X):
     bounds = np.zeros((len(X), 2))
-    for i, x in enumerate(X):
-        bounds[i] = np.min(x), np.max(x)
+    bounds[:, 0] = np.min(X, axis=1)
+    bounds[:, 1] = np.max(X, axis=1)
     return bounds
 
 
@@ -70,8 +70,8 @@ def set_UCS_for_R(model, response, stimulus, X1, ref, r, scale, k, reg):
                              stimulus_reg=reg,
                              response_reg=Regulation(1),
                              is_ucs=True)
-    elif np.mean(X2.ys[response, :]) < (1 / scale) * np.mean(X1[response, :]) and np.mean(
-            X2.ys[response, :]) < (1 / scale) * np.mean(ref[response, :]):
+    elif np.mean(X2.ys[response, :]) <= (1 / scale) * np.mean(X1[response, :]) and np.mean(
+            X2.ys[response, :]) <= (1 / scale) * np.mean(ref[response, :]):
         return MemoryCircuit(stimulus=stimulus,
                              response=response,
                              stimulus_reg=reg,
@@ -142,22 +142,24 @@ def detect_mem(X1, e1, e2, ucs_circuit):
 
 
 if __name__ == "__main__":
-    model_id = 4
+    model_id = 31  # 26, 27, 29, 31
     key = jrandom.PRNGKey(0)
     np.random.seed(0)
     US_scale_up = 100.0
     R_scale_up = 2.0
     sim_cnt = 2500
 
-    grn = GeneRegulatoryNetwork.create(biomodel_idx=4)
+    grn = GeneRegulatoryNetwork.create(biomodel_idx=model_id)
     reference_output, _ = grn(key=key)
     grn.set_time(n_secs=sim_cnt)
-    regulation = get_bounds(X=reference_output.ys)
+    relax_t = int(sim_cnt / grn.config.deltaT)
+    X1 = reference_output.ys[:, :relax_t]
+    regulation = get_bounds(X=X1)
     regulation[:, 0] /= US_scale_up
     regulation[:, 1] *= US_scale_up
     circuits = get_R_US_NS_exhaustive(model=grn,
-                                      X1=reference_output.ys[:, :int(sim_cnt / grn.config.deltaT)],
-                                      ref=reference_output.ys,
+                                      X1=X1,
+                                      ref=reference_output.ys[:, relax_t:relax_t * 2],
                                       r=regulation,
                                       scale=R_scale_up,
                                       k=key)
