@@ -6,6 +6,7 @@ import numpy as np
 import plotly.graph_objects as go
 from addict import Dict
 from numpy.linalg import det
+import matplotlib.pyplot as plt
 
 
 def downsample_traj(traj, scaling_vector=np.ones((2,)), eps=0.05):
@@ -155,11 +156,20 @@ def make_img_fig(fig_idx, fig, width, height, title, img_format="png", scale=1, 
     return img_fig, img_title
 
 
-def plot_states_trajectory(fig_name, system_rollout, system_outputs, nb_save_outputs=True):
+def plot_states_trajectory(fig_name, system_rollout, system_outputs, nb_save_outputs=True, observed_node_ids=None,
+                           observed_node_names=None):
+    assert (observed_node_names is None and observed_node_ids is None) or\
+           (len(observed_node_names) == len(observed_node_ids))
     fig = go.Figure(layout=default_layout)
 
+    if observed_node_ids is None:
+        observed_node_ids = system_rollout.grn_step.y_indexes.values()
     for y_name, y_idx in system_rollout.grn_step.y_indexes.items():
-        fig.add_trace(go.Scatter(x=system_outputs.ts[0:1001:10], y=system_outputs.ys[y_idx, 0:1001:10],
+        if y_idx not in observed_node_ids:
+            continue
+        if observed_node_names is not None:
+            y_name = observed_node_names[y_idx]
+        fig.add_trace(go.Scatter(x=system_outputs.ts[0:-1:10], y=system_outputs.ys[y_idx, 0:-1:10],
                                  name=y_name,
                                  line=dict(color=default_colors[y_idx]),
                                  hovertemplate=y_name + ' (t=%{x:.0f}): %{y:.2f} &mu;M <extra></extra>'))
@@ -169,7 +179,7 @@ def plot_states_trajectory(fig_name, system_rollout, system_outputs, nb_save_out
 
     # Serialize fig to json and save
     if nb_save_outputs:
-        fig.write_json(fig_name)
+        fig.write_image(fig_name)
 
     return fig
 

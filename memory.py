@@ -7,6 +7,7 @@ from autodiscjax import DictTree
 from autodiscjax.modules import grnwrappers
 
 from model import *
+from plotting import plot_states_trajectory
 
 
 class Regulation(IntEnum):
@@ -63,6 +64,12 @@ def get_R_US_NS_exhaustive(model, X1, ref, r, scale, k):
 
 def set_UCS_for_R(model, response, stimulus, X1, ref, r, scale, k, reg):
     X2 = simulate_network(model, X1[:, -1], stimulus, r, reg, k)
+    fig = plot_states_trajectory(fig_name="figures/{0}-{1}-{2}.png".format(response, stimulus, int(reg)),
+                                 system_rollout=create_system_rollout_module(grn.config, y0=X1[:, -1]),
+                                 system_outputs=X2,
+                                 observed_node_ids=[response, stimulus],
+                                 observed_node_names={response: "R", stimulus: "ST"})
+    fig.show()
     if np.mean(X2.ys[response, :]) >= scale * np.mean(X1[response, :]) and np.mean(
             X2.ys[response, :]) >= scale * np.mean(ref[response, :]):
         return MemoryCircuit(stimulus=stimulus,
@@ -111,7 +118,7 @@ def test_pairing_memory(model, X1, ref, circuit, cs_list, r, scale, k):
         e1 = simulate_network(model, X1.ys[:, -1], [circuit.stimulus, cs.stimulus], r,
                               [circuit.stimulus_reg, cs.stimulus_reg], k)
         up_down_r = detect_reg_r(X1, e1, ref, cs, scale)
-        if up_down_r:
+        if int(up_down_r) != 0:
             e2 = model(key=k, y0=e1.ys[:, -1])
             is_mem = detect_mem(X1, e1, e2, cs)
             if is_mem:
@@ -126,23 +133,24 @@ def test_pairing_memory(model, X1, ref, circuit, cs_list, r, scale, k):
 
 def detect_reg_r(X1, e1, ref, cs, scale):
     r = cs.response
-    if np.mean(e1.ys[r, :]) >= r * np.mean(X1.ys[r, :]) and np.mean(e1.ys[r, :]) >= scale * np.mean(ref[r, :]):
+    if np.mean(e1.ys[r, :]) >= scale * np.mean(X1.ys[r, :]) \
+            and np.mean(e1.ys[r, :]) >= scale * np.mean(ref[r, :]):
         return Regulation(1)
-    elif np.mean(e1.ys[r, :]) >= scale * np.mean(X1.ys[r, :]) and np.mean(e1.ys[r, :]) >= scale * np.mean(ref[r, :]):
+    elif np.mean(e1.ys[r, :]) <= (1 / scale) * np.mean(X1.ys[r, :]) \
+            and np.mean(e1.ys[r, :]) <= (1 / scale) * np.mean(ref[r, :]):
         return Regulation(2)
     return Regulation(0)
 
 
 def detect_mem(X1, e1, e2, ucs_circuit):
-    assert ucs_circuit.response_reg == 1 or ucs_circuit.response_reg == 2
     r = ucs_circuit.response
     if ucs_circuit.response_reg == 1:
-        return np.mean(e2.ys[r, :]) >= np.mean(X1.ys[r, :]) + np.mean(e1.ys[r, :]) - np.mean(X1.ys[r, :]) / 2.0
-    return np.mean(e2.ys[r, :]) <= (np.mean(X1.ys[r, :]) - (np.mean(X1.ys[r, :]) - np.mean(e1.ys[r, :])) / 2.0)
+        return np.mean(e2.ys[r, :]) >= np.mean(X1.ys[r, :]) + (np.mean(e1.ys[r, :]) - np.mean(X1.ys[r, :])) / 2.0
+    return np.mean(e2.ys[r, :]) <= np.mean(X1.ys[r, :]) - (np.mean(X1.ys[r, :]) - np.mean(e1.ys[r, :])) / 2.0
 
 
 if __name__ == "__main__":
-    model_id = 31  # 26, 27, 29, 31
+    model_id = 27  # 26, 27, 29, 31
     key = jrandom.PRNGKey(0)
     np.random.seed(0)
     US_scale_up = 100.0
@@ -151,6 +159,10 @@ if __name__ == "__main__":
 
     grn = GeneRegulatoryNetwork.create(biomodel_idx=model_id)
     reference_output, _ = grn(key=key)
+    fig1 = plot_states_trajectory(fig_name="figures/relax.png",
+                                  system_rollout=create_system_rollout_module(grn.config),
+                                  system_outputs=reference_output)
+    fig1.show()
     grn.set_time(n_secs=sim_cnt)
     relax_t = int(sim_cnt / grn.config.deltaT)
     X1 = reference_output.ys[:, :relax_t]
@@ -163,7 +175,16 @@ if __name__ == "__main__":
                                       r=regulation,
                                       scale=R_scale_up,
                                       k=key)
-    exit()
+    # Surama did 2500 + 500 s, I do 2500 + 2500 s (as in paper and as in relax)
+    # for c in circuits:
+    #     print(c)
+    # exit()
     for r in range(len(reference_output)):
         if circuits[r]:
-            mem_eval_us_r(grn, reference_output.ys, reference_output.ys, circuits[r], regulation, R_scale_up, key)
+            mem_eval_us_r(model=grn,
+                          X1=X1,
+                          ref=reference_output.ys[:, relax_t:relax_t * 2],
+                          mem_circuits=circuits[r],
+                          r=regulation,
+                          scale=R_scale_up,
+                          k=key)
