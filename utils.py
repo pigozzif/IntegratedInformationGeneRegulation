@@ -1,6 +1,21 @@
+import argparse
 import importlib
+import random
 
 import autodiscjax.modules.grnwrappers as grn
+import numpy as np
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--id", type=int, default=27)
+    return parser.parse_args()
+
+
+def set_seed(s):
+    random.seed(s)
+    np.random.seed(s)
 
 
 def create_system_rollout_module(system_rollout_config, y0=None):

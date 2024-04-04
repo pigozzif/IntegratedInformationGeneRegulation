@@ -8,6 +8,7 @@ from autodiscjax.modules import grnwrappers
 
 from model import *
 from plotting import plot_states_trajectory
+from utils import parse_args, set_seed
 
 
 class Regulation(IntEnum):
@@ -50,22 +51,21 @@ class AssociativeLearning(object):
     def relax(self, y0=None):
         return self.grn(key=self.random_key, y0=y0)[0]
 
-    def stimulate(self, y0, stimulus, reg):
+    def stimulate(self, y0, stimulus, regulation):
         if not isinstance(stimulus, list):
             stimulus = [stimulus]
-        if not isinstance(reg, list):
-            reg = [reg]
+        if not isinstance(regulation, list):
+            regulation = [regulation]
         intervention_params = DictTree()
-        for s, regulation in zip(stimulus, reg):
+        for s, regulation in zip(stimulus, regulation):
             intervention_params.y[s] = jnp.array([self.bounds[s, int(regulation) % 2]])
         intervention_fn = grnwrappers.PiecewiseSetConstantIntervention(
             time_to_interval_fn=grnwrappers.TimeToInterval(
                 intervals=[[0, self.grn.config.n_secs * 2] for _ in stimulus]))
-        x, _ = self.grn(key=self.random_key,
+        return self.grn(key=self.random_key,
                         y0=y0,
                         intervention_fn=intervention_fn,
-                        intervention_params=intervention_params)
-        return x
+                        intervention_params=intervention_params)[0]
 
     def pretest(self):
         for response in range(len(self.X1)):
@@ -73,13 +73,13 @@ class AssociativeLearning(object):
             for stimulus in range(len(self.X1)):
                 if response == stimulus:
                     continue
-                for reg in [Regulation(1), Regulation(2)]:
-                    curr_circuits.append(self.pretest_for_r(response, stimulus, reg))
+                for regulation in [Regulation(1), Regulation(2)]:
+                    curr_circuits.append(self.pretest_for_r(response, stimulus, regulation))
             self.mem_circuits[response] = curr_circuits
 
-    def pretest_for_r(self, response, stimulus, reg):
-        x2 = self.stimulate(self.genes_ss, stimulus, reg)
-        # fig = plot_states_trajectory(fig_name="figures/{0}-{1}-{2}.png".format(response, stimulus, int(reg)),
+    def pretest_for_r(self, response, stimulus, regulation):
+        x2 = self.stimulate(self.genes_ss, stimulus, regulation)
+        # fig = plot_states_trajectory(fig_name="figures/{0}-{1}-{2}.png".format(response, stimulus, int(regulation)),
         #                              system_rollout=create_system_rollout_module(grn.config, y0=X1[:, -1]),
         #                              system_outputs=x2,
         #                              observed_node_ids=[response, stimulus],
@@ -90,7 +90,7 @@ class AssociativeLearning(object):
             self.reference[response, self.relax_t:self.relax_t * 2]):
             return MemoryCircuit(stimulus=stimulus,
                                  response=response,
-                                 stimulus_reg=reg,
+                                 stimulus_reg=regulation,
                                  response_reg=Regulation(1),
                                  is_ucs=True)
         elif np.mean(x2.ys[response, :]) <= (1 / self.r_scale_up) * np.mean(self.X1[response, :]) and np.mean(
@@ -98,12 +98,12 @@ class AssociativeLearning(object):
             self.reference[response, self.relax_t:self.relax_t * 2]):
             return MemoryCircuit(stimulus=stimulus,
                                  response=response,
-                                 stimulus_reg=reg,
+                                 stimulus_reg=regulation,
                                  response_reg=Regulation(2),
                                  is_ucs=True)
         return MemoryCircuit(stimulus=stimulus,
                              response=response,
-                             stimulus_reg=reg,
+                             stimulus_reg=regulation,
                              response_reg=Regulation(0),
                              is_ucs=False)
 
@@ -182,7 +182,9 @@ class AssociativeLearning(object):
 
 if __name__ == "__main__":
     # 26, 27, 29, 31
-    al = AssociativeLearning(seed=0, model_id=27)
+    args = parse_args()
+    set_seed(args.seed)
+    al = AssociativeLearning(seed=args.seed, model_id=args.id)
     # fig1 = plot_states_trajectory(fig_name="figures/relax.png",
     #                               system_rollout=create_system_rollout_module(grn.config),
     #                               system_outputs=reference_output)
