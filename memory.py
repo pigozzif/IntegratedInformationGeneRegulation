@@ -25,189 +25,181 @@ class MemoryCircuit(object):
     is_ucs: bool  # TODO: property
 
 
-def simulate_network(model, y0, stimulus, r, reg, k):
-    if not isinstance(stimulus, list):
-        stimulus = [stimulus]
-    if not isinstance(reg, list):
-        reg = [reg]
-    intervention_params = DictTree()
-    for s, regulation in zip(stimulus, reg):
-        intervention_params.y[s] = jnp.array([r[s, int(regulation) % 2]])
-    intervention_fn = grnwrappers.PiecewiseSetConstantIntervention(
-        time_to_interval_fn=grnwrappers.TimeToInterval(intervals=[[0, model.config.n_secs * 2] for _ in stimulus]))
-    X, _ = model(key=k,
-                 y0=y0,
-                 intervention_fn=intervention_fn,
-                 intervention_params=intervention_params)
-    return X
+class AssociativeLearning(object):
 
+    def __init__(self, seed, model_id=27, us_scale_up=100.0, r_scale_up=2.0, n_secs=2500):
+        self.random_key = jrandom.PRNGKey(seed)
+        self.grn = GeneRegulatoryNetwork.create(biomodel_idx=model_id)
+        self.us_scale_up = us_scale_up
+        self.r_scale_up = r_scale_up
+        self.n_secs = n_secs
+        self.reference = self.relax().ys
+        self.grn.set_time(n_secs=self.n_secs)
+        self.relax_t = int(self.n_secs / self.grn.config.deltaT)
+        self.X1 = self.reference[:, :self.relax_t]
+        self.genes_ss = self.X1[:, -1]
+        self.bounds = self._get_bounds()
+        self.mem_circuits = {}
 
-def get_bounds(X):
-    bounds = np.zeros((len(X), 2))
-    bounds[:, 0] = np.min(X, axis=1)
-    bounds[:, 1] = np.max(X, axis=1)
-    return bounds
+    def _get_bounds(self):
+        bounds = np.zeros((len(self.X1), 2))
+        bounds[:, 0] = np.min(self.X1, axis=1) / self.us_scale_up
+        bounds[:, 1] = np.max(self.X1, axis=1) * self.us_scale_up
+        return bounds
 
+    def relax(self, y0=None):
+        return self.grn(key=self.random_key, y0=y0)[0]
 
-def get_R_US_NS_exhaustive(model, X1, ref, r, scale, k):
-    circuits = []
-    for response in range(len(X1)):
-        curr_circuits = []
-        for stimulus in range(len(X1)):
-            if response == stimulus:
+    def stimulate(self, y0, stimulus, reg):
+        if not isinstance(stimulus, list):
+            stimulus = [stimulus]
+        if not isinstance(reg, list):
+            reg = [reg]
+        intervention_params = DictTree()
+        for s, regulation in zip(stimulus, reg):
+            intervention_params.y[s] = jnp.array([self.bounds[s, int(regulation) % 2]])
+        intervention_fn = grnwrappers.PiecewiseSetConstantIntervention(
+            time_to_interval_fn=grnwrappers.TimeToInterval(
+                intervals=[[0, self.grn.config.n_secs * 2] for _ in stimulus]))
+        x, _ = self.grn(key=self.random_key,
+                        y0=y0,
+                        intervention_fn=intervention_fn,
+                        intervention_params=intervention_params)
+        return x
+
+    def pretest(self):
+        for response in range(len(self.X1)):
+            curr_circuits = []
+            for stimulus in range(len(self.X1)):
+                if response == stimulus:
+                    continue
+                for reg in [Regulation(1), Regulation(2)]:
+                    curr_circuits.append(self.pretest_for_r(response, stimulus, reg))
+            self.mem_circuits[response] = curr_circuits
+
+    def pretest_for_r(self, response, stimulus, reg):
+        x2 = self.stimulate(self.genes_ss, stimulus, reg)
+        # fig = plot_states_trajectory(fig_name="figures/{0}-{1}-{2}.png".format(response, stimulus, int(reg)),
+        #                              system_rollout=create_system_rollout_module(grn.config, y0=X1[:, -1]),
+        #                              system_outputs=x2,
+        #                              observed_node_ids=[response, stimulus],
+        #                              observed_node_names={response: "R", stimulus: "ST"})
+        # fig.show()
+        if np.mean(x2.ys[response, :]) >= self.r_scale_up * np.mean(self.X1[response, :]) and np.mean(
+                x2.ys[response, :]) >= self.r_scale_up * np.mean(
+            self.reference[response, self.relax_t:self.relax_t * 2]):
+            return MemoryCircuit(stimulus=stimulus,
+                                 response=response,
+                                 stimulus_reg=reg,
+                                 response_reg=Regulation(1),
+                                 is_ucs=True)
+        elif np.mean(x2.ys[response, :]) <= (1 / self.r_scale_up) * np.mean(self.X1[response, :]) and np.mean(
+                x2.ys[response, :]) <= (1 / self.r_scale_up) * np.mean(
+            self.reference[response, self.relax_t:self.relax_t * 2]):
+            return MemoryCircuit(stimulus=stimulus,
+                                 response=response,
+                                 stimulus_reg=reg,
+                                 response_reg=Regulation(2),
+                                 is_ucs=True)
+        return MemoryCircuit(stimulus=stimulus,
+                             response=response,
+                             stimulus_reg=reg,
+                             response_reg=Regulation(0),
+                             is_ucs=False)
+
+    def eval_mem_for_r(self, response):
+        if not self.mem_circuits[r]:
+            return
+        cs_list = [circuit for circuit in self.mem_circuits[response] if not circuit.is_ucs]
+        for ucs_circuit in [circuit for circuit in self.mem_circuits[response] if circuit.is_ucs]:
+            self.is_us_memory(ucs_circuit)
+            self.is_pairing_memory(ucs_circuit, cs_list)
+            self.is_transfer_memory(ucs_circuit, cs_list)
+            self.is_associative_memory(ucs_circuit, cs_list)
+            self.is_consolidation_memory(ucs_circuit, cs_list)
+
+    def is_us_memory(self, ucs_circuit):
+        e1 = self.stimulate(self.genes_ss, ucs_circuit.stimulus, ucs_circuit.stimulus_reg)
+        e2 = self.relax(y0=e1.ys[:, -1])
+        return self.is_memory(e1, e2, ucs_circuit), e2
+
+    def is_pairing_memory(self, ucs_circuit, cs_list):
+        us_r_cs_genes = []
+        for cs_circuit in cs_list:
+            if ucs_circuit.stimulus == cs_circuit.stimulus:
                 continue
-            for reg in [Regulation(1), Regulation(2)]:
-                curr_circuits.append(set_UCS_for_R(model, response, stimulus, X1, ref, r, scale, k, reg))
-        circuits.append(curr_circuits)
-    return circuits
-
-
-def set_UCS_for_R(model, response, stimulus, X1, ref, r, scale, k, reg):
-    X2 = simulate_network(model, X1[:, -1], stimulus, r, reg, k)
-    # fig = plot_states_trajectory(fig_name="figures/{0}-{1}-{2}.png".format(response, stimulus, int(reg)),
-    #                              system_rollout=create_system_rollout_module(grn.config, y0=X1[:, -1]),
-    #                              system_outputs=X2,
-    #                              observed_node_ids=[response, stimulus],
-    #                              observed_node_names={response: "R", stimulus: "ST"})
-    # fig.show()
-    if np.mean(X2.ys[response, :]) >= scale * np.mean(X1[response, :]) and np.mean(
-            X2.ys[response, :]) >= scale * np.mean(ref[response, :]):
-        return MemoryCircuit(stimulus=stimulus,
-                             response=response,
-                             stimulus_reg=reg,
-                             response_reg=Regulation(1),
-                             is_ucs=True)
-    elif np.mean(X2.ys[response, :]) <= (1 / scale) * np.mean(X1[response, :]) and np.mean(
-            X2.ys[response, :]) <= (1 / scale) * np.mean(ref[response, :]):
-        return MemoryCircuit(stimulus=stimulus,
-                             response=response,
-                             stimulus_reg=reg,
-                             response_reg=Regulation(2),
-                             is_ucs=True)
-    return MemoryCircuit(stimulus=stimulus,
-                         response=response,
-                         stimulus_reg=reg,
-                         response_reg=Regulation(0),
-                         is_ucs=False)
-
-
-def mem_eval_us_r(model, X1, ref, mem_circuits, r, scale, k):
-    cs_list = [circuit for circuit in mem_circuits if not circuit.is_ucs]
-    for ucs_circuit in [circuit for circuit in mem_circuits if circuit.is_ucs]:
-        test_us_memory(model, X1, ucs_circuit, r, k)
-        test_pairing_memory(model, X1, ref, ucs_circuit, cs_list, r, scale, k)
-        test_transfer_memory(model, X1, ucs_circuit, cs_list, r, k)
-        test_associative_memory(model, X1, ref, ucs_circuit, cs_list, r, scale, k)
-        test_consolidation_memory(model, X1, ref, ucs_circuit, cs_list, r, scale, k)
-
-
-def test_us_memory(model, X1, ucs_circuit, r, k):
-    e1 = simulate_network(model, X1[:, -1], ucs_circuit.stimulus, r, ucs_circuit.stimulus_reg, k)
-    e2, _ = model(key=k, y0=e1.ys[:, -1])
-    return detect_mem(X1, e1, e2, ucs_circuit), e2
-
-
-def test_pairing_memory(model, X1, ref, circuit, cs_list, r, scale, k):
-    us_r_cs_genes = []
-    for cs in cs_list:
-        e1 = simulate_network(model, X1[:, -1], [circuit.stimulus, cs.stimulus], r,
-                              [circuit.stimulus_reg, cs.stimulus_reg], k)
-        up_down_r = detect_reg_r(X1, e1, ref, cs, scale)
-        if int(up_down_r) != 0:
-            e2, _ = model(key=k, y0=e1.ys[:, -1])
-            is_mem = detect_mem(X1, e1, e2, cs)
-            if is_mem:
-                if circuit.stimulus != cs.stimulus:
-                    us_r_cs_genes.append((2, circuit, cs, e1.ys[:, -1]))
+            e1 = self.stimulate(self.genes_ss, [ucs_circuit.stimulus, cs_circuit.stimulus], [ucs_circuit.stimulus_reg, cs_circuit.stimulus_reg])
+            up_down_r = self.is_r_regulated(e1, cs_circuit)
+            if int(up_down_r) != 0:
+                e2 = self.relax(y0=e1.ys[:, -1])
+                is_mem = self.is_memory(e1, e2, cs_circuit)
+                if is_mem:
+                    us_r_cs_genes.append((2, ucs_circuit, cs_circuit, e1.ys[:, -1]))
+                else:
+                    us_r_cs_genes.append((8, ucs_circuit, cs_circuit, e1.ys[:, -1]))
             else:
-                us_r_cs_genes.append((8, circuit, cs, e1.ys[:, -1]))
-        else:
-            us_r_cs_genes.append((8, circuit, cs, e1.ys[:, -1]))
-    return us_r_cs_genes
+                us_r_cs_genes.append((8, ucs_circuit, cs_circuit, e1.ys[:, -1]))
+        return us_r_cs_genes
 
+    def is_transfer_memory(self, ucs_circuit, cs_list):
+        for cs_circuit in cs_list:
+            if ucs_circuit.stimulus == cs_circuit.stimulus:
+                continue
+            e1 = self.stimulate(self.genes_ss, ucs_circuit.stimulus, ucs_circuit.stimulus_reg)
+            e2 = self.stimulate(e1.ys[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
+            is_mem = self.is_memory(e1, e2, ucs_circuit)
 
-def test_transfer_memory(model, X1, circuit, cs_list, r, k):
-    for cs in cs_list:
-        e1 = simulate_network(model, X1[:, -1], circuit.stimulus, r, circuit.stimulus_reg, k)
-        e2 = simulate_network(model, e1.ys[:, -1], cs.stimulus, r, cs.stimulus_reg, k)
-        is_mem = detect_mem(X1, e1, e2, circuit)
+    def is_associative_memory(self, ucs_circuit, cs_list):
+        for cs_circuit in cs_list:
+            if ucs_circuit.stimulus == cs_circuit.stimulus:
+                continue
+            e1 = self.stimulate(self.genes_ss, [ucs_circuit.stimulus, cs_circuit.stimulus], [ucs_circuit.stimulus_reg, cs_circuit.stimulus_reg])
+            up_down_r = self.is_r_regulated(e1, cs_circuit)
+            if int(up_down_r) != 0:
+                e2 = self.stimulate(e1.ys[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
+                is_mem = self.is_memory(e1, e2, cs_circuit)
 
+    def is_consolidation_memory(self, ucs_circuit, cs_list):
+        for cs_circuit in cs_list:
+            if ucs_circuit.stimulus == cs_circuit.stimulus:
+                continue
+            e1 = self.stimulate(self.genes_ss, [ucs_circuit.stimulus, cs_circuit.stimulus], [ucs_circuit.stimulus_reg, cs_circuit.stimulus_reg])
+            up_down_r = self.is_r_regulated(e1, cs_circuit)
+            if int(up_down_r) != 0:
+                e2 = self.stimulate(e1.ys[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
+                e3 = self.stimulate(e2.ys[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
+                is_mem = self.is_memory(e1, e3, cs_circuit)
 
-def test_associative_memory(model, X1, ref, circuit, cs_list, r, scale, k):
-    for cs in cs_list:
-        e1 = simulate_network(model, X1[:, -1], [circuit.stimulus, cs.stimulus], r,
-                              [circuit.stimulus_reg, cs.stimulus_reg], k)
-        up_down_r = detect_reg_r(X1, e1, ref, cs, scale)
-        if int(up_down_r) != 0:
-            e2 = simulate_network(model, e1.ys[:, -1], cs.stimulus, r, cs.stimulus_reg, k)
-            is_mem = detect_mem(X1, e1, e2, cs)
+    def is_r_regulated(self, e1, cs_circuit):
+        response = cs_circuit.response
+        if np.mean(e1.ys[response, :]) >= self.r_scale_up * np.mean(self.X1[response, :]) \
+                and np.mean(e1.ys[response, :]) >= self.r_scale_up * np.mean(self.reference[response, self.relax_t:self.relax_t * 2]):
+            return Regulation(1)
+        elif np.mean(e1.ys[response, :]) <= (1 / self.r_scale_up) * np.mean(self.X1[response, :]) \
+                and np.mean(e1.ys[response, :]) <= (1 / self.r_scale_up) * np.mean(self.reference[response, self.relax_t:self.relax_t * 2]):
+            return Regulation(2)
+        return Regulation(0)
 
-
-def test_consolidation_memory(model, X1, ref, circuit, cs_list, r, scale, k):
-    for cs in cs_list:
-        e1 = simulate_network(model, X1[:, -1], [circuit.stimulus, cs.stimulus], r,
-                              [circuit.stimulus_reg, cs.stimulus_reg], k)
-        up_down_r = detect_reg_r(X1, e1, ref, cs, scale)
-        if int(up_down_r) != 0:
-            e2 = simulate_network(model, e1.ys[:, -1], cs.stimulus, r, cs.stimulus_reg, k)
-            e3 = simulate_network(model, e2.ys[:, -1], cs.stimulus, r, cs.stimulus_reg, k)
-            is_mem = detect_mem(X1, e1, e3, cs)
-
-
-def detect_reg_r(X1, e1, ref, cs, scale):
-    r = cs.response
-    if np.mean(e1.ys[r, :]) >= scale * np.mean(X1[r, :]) \
-            and np.mean(e1.ys[r, :]) >= scale * np.mean(ref[r, :]):
-        return Regulation(1)
-    elif np.mean(e1.ys[r, :]) <= (1 / scale) * np.mean(X1[r, :]) \
-            and np.mean(e1.ys[r, :]) <= (1 / scale) * np.mean(ref[r, :]):
-        return Regulation(2)
-    return Regulation(0)
-
-
-def detect_mem(X1, e1, e2, ucs_circuit):
-    r = ucs_circuit.response
-    if ucs_circuit.response_reg == 1:
-        return np.mean(e2.ys[r, :]) >= np.mean(X1[r, :]) + (np.mean(e1.ys[r, :]) - np.mean(X1[r, :])) / 2.0
-    return np.mean(e2.ys[r, :]) <= np.mean(X1[r, :]) - (np.mean(X1[r, :]) - np.mean(e1.ys[r, :])) / 2.0
+    def is_memory(self, e1, e2, ucs_circuit):
+        response = ucs_circuit.response
+        if ucs_circuit.response_reg == 1:
+            return np.mean(e2.ys[response, :]) >= np.mean(self.X1[response, :]) + (
+                    np.mean(e1.ys[response, :]) - np.mean(self.X1[response, :])) / 2.0
+        return np.mean(e2.ys[response, :]) <= np.mean(self.X1[response, :]) - (
+                np.mean(self.X1[response, :]) - np.mean(e1.ys[response, :])) / 2.0
 
 
 if __name__ == "__main__":
-    model_id = 27  # 26, 27, 29, 31
-    key = jrandom.PRNGKey(0)
-    np.random.seed(0)
-    US_scale_up = 100.0
-    R_scale_up = 2.0
-    sim_cnt = 2500
-
-    grn = GeneRegulatoryNetwork.create(biomodel_idx=model_id)
-    reference_output, _ = grn(key=key)
+    # 26, 27, 29, 31
+    al = AssociativeLearning(seed=0, model_id=27)
     # fig1 = plot_states_trajectory(fig_name="figures/relax.png",
     #                               system_rollout=create_system_rollout_module(grn.config),
     #                               system_outputs=reference_output)
     # fig1.show()
-    grn.set_time(n_secs=sim_cnt)
-    relax_t = int(sim_cnt / grn.config.deltaT)
-    X1 = reference_output.ys[:, :relax_t]
-    regulation = get_bounds(X=X1)
-    regulation[:, 0] /= US_scale_up
-    regulation[:, 1] *= US_scale_up
-    circuits = get_R_US_NS_exhaustive(model=grn,
-                                      X1=X1,
-                                      ref=reference_output.ys[:, relax_t:relax_t * 2],
-                                      r=regulation,
-                                      scale=R_scale_up,
-                                      k=key)
+    al.pretest()
     # Surama did 2500 + 500 s, I do 2500 + 2500 s (as in paper and as in relax)
     # for c in circuits:
     #     print(c)
     # exit()
-    for r in range(len(reference_output.ys)):
-        if circuits[r]:
-            mem_eval_us_r(model=grn,
-                          X1=X1,
-                          ref=reference_output.ys[:, relax_t:relax_t * 2],
-                          mem_circuits=circuits[r],
-                          r=regulation,
-                          scale=R_scale_up,
-                          k=key)
+    for r in al.mem_circuits.keys():
+        al.eval_mem_for_r(response=r)
