@@ -27,7 +27,7 @@ class MemoryCircuit(object):
 
 class AssociativeLearning(object):
 
-    def __init__(self, seed, model_id=27, us_scale_up=100.0, r_scale_up=2.0, n_secs=2500):
+    def __init__(self, seed, model_id, us_scale_up=100.0, r_scale_up=2.0, n_secs=2500):
         self.random_key = jrandom.PRNGKey(seed)
         self.grn = GeneRegulatoryNetwork.create(biomodel_idx=model_id)
         self.us_scale_up = us_scale_up
@@ -121,10 +121,9 @@ class AssociativeLearning(object):
     def is_us_memory(self, ucs_circuit):
         e1 = self.stimulate(self.genes_ss, ucs_circuit.stimulus, ucs_circuit.stimulus_reg)
         e2 = self.relax(y0=e1.ys[:, -1])
-        return self.is_memory(e1, e2, ucs_circuit), e2
+        return self.is_memory(e1, e2, ucs_circuit.response, ucs_circuit.response_reg)
 
     def is_pairing_memory(self, ucs_circuit, cs_list):
-        us_r_cs_genes = []
         for cs_circuit in cs_list:
             if ucs_circuit.stimulus == cs_circuit.stimulus:
                 continue
@@ -132,14 +131,7 @@ class AssociativeLearning(object):
             up_down_r = self.is_r_regulated(e1, cs_circuit)
             if int(up_down_r) != 0:
                 e2 = self.relax(y0=e1.ys[:, -1])
-                is_mem = self.is_memory(e1, e2, cs_circuit)
-                if is_mem:
-                    us_r_cs_genes.append((2, ucs_circuit, cs_circuit, e1.ys[:, -1]))
-                else:
-                    us_r_cs_genes.append((8, ucs_circuit, cs_circuit, e1.ys[:, -1]))
-            else:
-                us_r_cs_genes.append((8, ucs_circuit, cs_circuit, e1.ys[:, -1]))
-        return us_r_cs_genes
+                is_mem = self.is_memory(e1, e2, ucs_circuit.response, up_down_r)
 
     def is_transfer_memory(self, ucs_circuit, cs_list):
         for cs_circuit in cs_list:
@@ -147,7 +139,7 @@ class AssociativeLearning(object):
                 continue
             e1 = self.stimulate(self.genes_ss, ucs_circuit.stimulus, ucs_circuit.stimulus_reg)
             e2 = self.stimulate(e1.ys[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
-            is_mem = self.is_memory(e1, e2, ucs_circuit)
+            is_mem = self.is_memory(e1, e2, ucs_circuit.response, ucs_circuit.response_reg)
 
     def is_associative_memory(self, ucs_circuit, cs_list):
         for cs_circuit in cs_list:
@@ -157,7 +149,7 @@ class AssociativeLearning(object):
             up_down_r = self.is_r_regulated(e1, cs_circuit)
             if int(up_down_r) != 0:
                 e2 = self.stimulate(e1.ys[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
-                is_mem = self.is_memory(e1, e2, cs_circuit)
+                is_mem = self.is_memory(e1, e2, ucs_circuit.response, up_down_r)
 
     def is_consolidation_memory(self, ucs_circuit, cs_list):
         for cs_circuit in cs_list:
@@ -168,7 +160,7 @@ class AssociativeLearning(object):
             if int(up_down_r) != 0:
                 e2 = self.stimulate(e1.ys[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
                 e3 = self.stimulate(e2.ys[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
-                is_mem = self.is_memory(e1, e3, cs_circuit)
+                is_mem = self.is_memory(e1, e3, ucs_circuit.response, up_down_r)
 
     def is_r_regulated(self, e1, cs_circuit):
         response = cs_circuit.response
@@ -180,9 +172,8 @@ class AssociativeLearning(object):
             return Regulation(2)
         return Regulation(0)
 
-    def is_memory(self, e1, e2, ucs_circuit):
-        response = ucs_circuit.response
-        if ucs_circuit.response_reg == 1:
+    def is_memory(self, e1, e2, response, response_reg):
+        if response_reg == 1:
             return np.mean(e2.ys[response, :]) >= np.mean(self.X1[response, :]) + (
                     np.mean(e1.ys[response, :]) - np.mean(self.X1[response, :])) / 2.0
         return np.mean(e2.ys[response, :]) <= np.mean(self.X1[response, :]) - (
