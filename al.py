@@ -1,5 +1,6 @@
 import dataclasses
 from enum import IntEnum
+from multiprocessing import Pool
 
 import numpy as np
 import jax.numpy as jnp
@@ -37,15 +38,15 @@ class AssociativeLearning(object):
         self.reference = self.relax().ys
         self.grn.set_time(n_secs=self.n_secs)
         self.relax_t = int(self.n_secs / self.grn.config.deltaT)
-        self.X1 = self.reference[:, :self.relax_t]
-        self.genes_ss = self.X1[:, -1]
+        self.x1 = self.reference[:, :self.relax_t]
+        self.genes_ss = self.x1[:, -1]
         self.bounds = self._get_bounds()
         self.mem_circuits = {}
 
     def _get_bounds(self):
-        bounds = np.zeros((len(self.X1), 2))
-        bounds[:, 0] = np.min(self.X1, axis=1) / self.us_scale_up
-        bounds[:, 1] = np.max(self.X1, axis=1) * self.us_scale_up
+        bounds = np.zeros((len(self.x1), 2))
+        bounds[:, 0] = np.min(self.x1, axis=1) / self.us_scale_up
+        bounds[:, 1] = np.max(self.x1, axis=1) * self.us_scale_up
         return bounds
 
     def relax(self, y0=None):
@@ -68,24 +69,25 @@ class AssociativeLearning(object):
                         intervention_params=intervention_params)[0]
 
     def pretest(self):
-        for response in range(len(self.X1)):
-            curr_circuits = []
-            for stimulus in range(len(self.X1)):
+        curr_circuits = []
+        for response in range(len(self.x1)):
+            for stimulus in range(len(self.x1)):
                 if response == stimulus:
                     continue
                 for regulation in [Regulation(1), Regulation(2)]:
                     curr_circuits.append(self.pretest_for_r(response, stimulus, regulation))
             self.mem_circuits[response] = curr_circuits
+            curr_circuits.clear()
 
     def pretest_for_r(self, response, stimulus, regulation):
         x2 = self.stimulate(self.genes_ss, stimulus, regulation)
         # fig = plot_states_trajectory(fig_name="figures/{0}-{1}-{2}.png".format(response, stimulus, int(regulation)),
-        #                              system_rollout=create_system_rollout_module(grn.config, y0=X1[:, -1]),
+        #                              system_rollout=create_system_rollout_module(grn.config, y0=x1[:, -1]),
         #                              system_outputs=x2,
         #                              observed_node_ids=[response, stimulus],
         #                              observed_node_names={response: "R", stimulus: "ST"})
         # fig.show()
-        if np.mean(x2.ys[response, :]) >= self.r_scale_up * np.mean(self.X1[response, :]) and np.mean(
+        if np.mean(x2.ys[response, :]) >= self.r_scale_up * np.mean(self.x1[response, :]) and np.mean(
                 x2.ys[response, :]) >= self.r_scale_up * np.mean(
             self.reference[response, self.relax_t:self.relax_t * 2]):
             return MemoryCircuit(stimulus=stimulus,
@@ -93,7 +95,7 @@ class AssociativeLearning(object):
                                  stimulus_reg=regulation,
                                  response_reg=Regulation(1),
                                  is_ucs=True)
-        elif np.mean(x2.ys[response, :]) <= (1 / self.r_scale_up) * np.mean(self.X1[response, :]) and np.mean(
+        elif np.mean(x2.ys[response, :]) <= (1 / self.r_scale_up) * np.mean(self.x1[response, :]) and np.mean(
                 x2.ys[response, :]) <= (1 / self.r_scale_up) * np.mean(
             self.reference[response, self.relax_t:self.relax_t * 2]):
             return MemoryCircuit(stimulus=stimulus,
@@ -108,7 +110,7 @@ class AssociativeLearning(object):
                              is_ucs=False)
 
     def eval_mem_for_r(self, response):
-        if not self.mem_circuits[r]:
+        if not self.mem_circuits[response]:
             return
         cs_list = [circuit for circuit in self.mem_circuits[response] if not circuit.is_ucs]
         for ucs_circuit in [circuit for circuit in self.mem_circuits[response] if circuit.is_ucs]:
@@ -164,35 +166,42 @@ class AssociativeLearning(object):
 
     def is_r_regulated(self, e1, cs_circuit):
         response = cs_circuit.response
-        if np.mean(e1.ys[response, :]) >= self.r_scale_up * np.mean(self.X1[response, :]) \
+        if np.mean(e1.ys[response, :]) >= self.r_scale_up * np.mean(self.x1[response, :]) \
                 and np.mean(e1.ys[response, :]) >= self.r_scale_up * np.mean(self.reference[response, self.relax_t:self.relax_t * 2]):
             return Regulation(1)
-        elif np.mean(e1.ys[response, :]) <= (1 / self.r_scale_up) * np.mean(self.X1[response, :]) \
+        elif np.mean(e1.ys[response, :]) <= (1 / self.r_scale_up) * np.mean(self.x1[response, :]) \
                 and np.mean(e1.ys[response, :]) <= (1 / self.r_scale_up) * np.mean(self.reference[response, self.relax_t:self.relax_t * 2]):
             return Regulation(2)
         return Regulation(0)
 
     def is_memory(self, e1, e2, response, response_reg):
         if response_reg == 1:
-            return np.mean(e2.ys[response, :]) >= np.mean(self.X1[response, :]) + (
-                    np.mean(e1.ys[response, :]) - np.mean(self.X1[response, :])) / 2.0
-        return np.mean(e2.ys[response, :]) <= np.mean(self.X1[response, :]) - (
-                np.mean(self.X1[response, :]) - np.mean(e1.ys[response, :])) / 2.0
+            return np.mean(e2.ys[response, :]) >= np.mean(self.x1[response, :]) + (
+                    np.mean(e1.ys[response, :]) - np.mean(self.x1[response, :])) / 2.0
+        return np.mean(e2.ys[response, :]) <= np.mean(self.x1[response, :]) - (
+                np.mean(self.x1[response, :]) - np.mean(e1.ys[response, :])) / 2.0
+
+
+def learn(args):
+    seed, idx = args
+    print(idx)
+    al = AssociativeLearning(seed=seed, model_id=idx)
+    al.pretest()
+    for r in al.mem_circuits.keys():
+        al.eval_mem_for_r(response=r)
 
 
 if __name__ == "__main__":
     # 26, 27, 29, 31
-    args = parse_args()
-    set_seed(args.seed)
-    al = AssociativeLearning(seed=args.seed, model_id=args.id)
+    arguments = parse_args()
+    set_seed(arguments.seed)
+    results = []
+    with Pool(arguments.np) as pool:
+        results.append(pool.map(learn, [(arguments.seed, idx) for idx in arguments.ids]))
     # fig1 = plot_states_trajectory(fig_name="figures/relax.png",
     #                               system_rollout=create_system_rollout_module(grn.config),
     #                               system_outputs=reference_output)
     # fig1.show()
-    al.pretest()
     # Surama did 2500 + 500 s, I do 2500 + 2500 s (as in paper and as in relax)
     # for c in circuits:
     #     print(c)
-    # exit()
-    for r in al.mem_circuits.keys():
-        al.eval_mem_for_r(response=r)
