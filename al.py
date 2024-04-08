@@ -66,7 +66,7 @@ class AssociativeLearning(object):
         return self.grn(key=self.random_key,
                         y0=y0,
                         intervention_fn=intervention_fn,
-                        intervention_params=intervention_params)[0]
+                        intervention_params=intervention_params)[0].ys
 
     def pretest(self):
         curr_circuits = []
@@ -87,16 +87,16 @@ class AssociativeLearning(object):
         #                              observed_node_ids=[response, stimulus],
         #                              observed_node_names={response: "R", stimulus: "ST"})
         # fig.show()
-        if np.mean(x2.ys[response, :]) >= self.r_scale_up * np.mean(self.x1[response, :]) and np.mean(
-                x2.ys[response, :]) >= self.r_scale_up * np.mean(
+        if np.mean(x2[response, :]) >= self.r_scale_up * np.mean(self.x1[response, :]) and np.mean(
+                x2[response, :]) >= self.r_scale_up * np.mean(
             self.reference[response, self.relax_t:self.relax_t * 2]):
             return MemoryCircuit(stimulus=stimulus,
                                  response=response,
                                  stimulus_reg=regulation,
                                  response_reg=Regulation(1),
                                  is_ucs=True)
-        elif np.mean(x2.ys[response, :]) <= (1 / self.r_scale_up) * np.mean(self.x1[response, :]) and np.mean(
-                x2.ys[response, :]) <= (1 / self.r_scale_up) * np.mean(
+        elif np.mean(x2[response, :]) <= (1 / self.r_scale_up) * np.mean(self.x1[response, :]) and np.mean(
+                x2[response, :]) <= (1 / self.r_scale_up) * np.mean(
             self.reference[response, self.relax_t:self.relax_t * 2]):
             return MemoryCircuit(stimulus=stimulus,
                                  response=response,
@@ -113,82 +113,92 @@ class AssociativeLearning(object):
         if not self.mem_circuits[response]:
             return
         cs_list = [circuit for circuit in self.mem_circuits[response] if not circuit.is_ucs]
+        us, pairing, transfer, associative, consolidation = [], [], [], [], []
         for ucs_circuit in [circuit for circuit in self.mem_circuits[response] if circuit.is_ucs]:
-            self.is_us_memory(ucs_circuit)
-            self.is_pairing_memory(ucs_circuit, cs_list)
-            self.is_transfer_memory(ucs_circuit, cs_list)
-            self.is_associative_memory(ucs_circuit, cs_list)
-            self.is_consolidation_memory(ucs_circuit, cs_list)
+            us.extend([self.is_us_memory(ucs_circuit)])
+            pairing.extend(self.is_pairing_memory(ucs_circuit, cs_list))
+            transfer.extend(self.is_transfer_memory(ucs_circuit, cs_list))
+            associative.extend(self.is_associative_memory(ucs_circuit, cs_list))
+            consolidation.extend(self.is_consolidation_memory(ucs_circuit, cs_list))
+        return us, pairing, transfer, associative, consolidation
 
     def is_us_memory(self, ucs_circuit):
         e1 = self.stimulate(self.genes_ss, ucs_circuit.stimulus, ucs_circuit.stimulus_reg)
-        e2 = self.relax(y0=e1.ys[:, -1])
+        e2 = self.relax(y0=e1[:, -1])
         is_mem = self.is_memory(e1, e2, ucs_circuit.response, ucs_circuit.response_reg)
         del e1, e2
         return is_mem
 
     def is_pairing_memory(self, ucs_circuit, cs_list):
+        is_mem = []
         for cs_circuit in cs_list:
             if ucs_circuit.stimulus == cs_circuit.stimulus:
                 continue
             e1 = self.stimulate(self.genes_ss, [ucs_circuit.stimulus, cs_circuit.stimulus], [ucs_circuit.stimulus_reg, cs_circuit.stimulus_reg])
             up_down_r = self.is_r_regulated(e1, cs_circuit)
             if int(up_down_r) != 0:
-                e2 = self.relax(y0=e1.ys[:, -1])
-                is_mem = self.is_memory(e1, e2, ucs_circuit.response, up_down_r)
+                e2 = self.relax(y0=e1[:, -1])
+                is_mem.append(self.is_memory(e1, e2, ucs_circuit.response, up_down_r))
                 del e2
             del e1
+        return is_mem
 
     def is_transfer_memory(self, ucs_circuit, cs_list):
+        is_mem = []
         for cs_circuit in cs_list:
             if ucs_circuit.stimulus == cs_circuit.stimulus:
                 continue
             e1 = self.stimulate(self.genes_ss, ucs_circuit.stimulus, ucs_circuit.stimulus_reg)
-            e2 = self.stimulate(e1.ys[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
-            is_mem = self.is_memory(e1, e2, ucs_circuit.response, ucs_circuit.response_reg)
+            e2 = self.stimulate(e1[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
+            is_mem.append(self.is_memory(e1, e2, ucs_circuit.response, ucs_circuit.response_reg))
             del e1, e2
+        return is_mem
 
     def is_associative_memory(self, ucs_circuit, cs_list):
+        is_mem = []
         for cs_circuit in cs_list:
             if ucs_circuit.stimulus == cs_circuit.stimulus:
                 continue
             e1 = self.stimulate(self.genes_ss, [ucs_circuit.stimulus, cs_circuit.stimulus], [ucs_circuit.stimulus_reg, cs_circuit.stimulus_reg])
             up_down_r = self.is_r_regulated(e1, cs_circuit)
             if int(up_down_r) != 0:
-                e2 = self.stimulate(e1.ys[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
-                is_mem = self.is_memory(e1, e2, ucs_circuit.response, up_down_r)
+                e2 = self.stimulate(e1[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
+                is_mem.append(self.is_memory(e1, e2, ucs_circuit.response, up_down_r))
                 del e2
             del e1
+        return is_mem
 
     def is_consolidation_memory(self, ucs_circuit, cs_list):
+        is_mem = []
         for cs_circuit in cs_list:
             if ucs_circuit.stimulus == cs_circuit.stimulus:
                 continue
             e1 = self.stimulate(self.genes_ss, [ucs_circuit.stimulus, cs_circuit.stimulus], [ucs_circuit.stimulus_reg, cs_circuit.stimulus_reg])
             up_down_r = self.is_r_regulated(e1, cs_circuit)
             if int(up_down_r) != 0:
-                e2 = self.stimulate(e1.ys[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
-                e3 = self.stimulate(e2.ys[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
-                is_mem = self.is_memory(e1, e3, ucs_circuit.response, up_down_r)
+                e2 = self.stimulate(e1[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
+                e3 = self.stimulate(e2[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
+                is_mem.append(self.is_memory(e1, e3, ucs_circuit.response, up_down_r))
                 del e2, e3
             del e1
+        return is_mem
 
     def is_r_regulated(self, e1, cs_circuit):
         response = cs_circuit.response
-        if np.mean(e1.ys[response, :]) >= self.r_scale_up * np.mean(self.x1[response, :]) \
-                and np.mean(e1.ys[response, :]) >= self.r_scale_up * np.mean(self.reference[response, self.relax_t:self.relax_t * 2]):
+        if np.mean(e1[response, :]) >= self.r_scale_up * np.mean(self.x1[response, :]) \
+                and np.mean(e1[response, :]) >= self.r_scale_up * np.mean(self.reference[response, self.relax_t:self.relax_t * 2]):
             return Regulation(1)
-        elif np.mean(e1.ys[response, :]) <= (1 / self.r_scale_up) * np.mean(self.x1[response, :]) \
-                and np.mean(e1.ys[response, :]) <= (1 / self.r_scale_up) * np.mean(self.reference[response, self.relax_t:self.relax_t * 2]):
+        elif np.mean(e1[response, :]) <= (1 / self.r_scale_up) * np.mean(self.x1[response, :]) \
+                and np.mean(e1[response, :]) <= (1 / self.r_scale_up) * np.mean(self.reference[response, self.relax_t:self.relax_t * 2]):
             return Regulation(2)
         return Regulation(0)
 
     def is_memory(self, e1, e2, response, response_reg):
         if response_reg == 1:
-            return np.mean(e2.ys[response, :]) >= np.mean(self.x1[response, :]) + (
-                    np.mean(e1.ys[response, :]) - np.mean(self.x1[response, :])) / 2.0
-        return np.mean(e2.ys[response, :]) <= np.mean(self.x1[response, :]) - (
-                np.mean(self.x1[response, :]) - np.mean(e1.ys[response, :])) / 2.0
+            return np.mean(e2[response, :]) >= np.mean(self.x1[response, :]) + (
+                    np.mean(e1[response, :]) - np.mean(self.x1[response, :])) / 2.0
+        return np.mean(e2[response, :]) <= np.mean(self.x1[response, :]) - (
+                np.mean(self.x1[response, :]) - np.mean(e1[response, :])) / 2.0
 
 
 def learn(args):
@@ -197,7 +207,10 @@ def learn(args):
     al = AssociativeLearning(seed=seed, model_id=i)
     al.pretest()
     for r in al.mem_circuits.keys():
-        al.eval_mem_for_r(response=r)
+        memories = al.eval_mem_for_r(response=r)
+        print("\n===\n")
+        for name, memory in zip(["US", "PAIRING", "TRANSFER", "ASSOCIATIVE", "CONSOLIDATION"], memories):
+            print("{0}: {1}".format(name, sum(memory) / len(al.mem_circuits[r])))
 
 
 if __name__ == "__main__":
