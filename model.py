@@ -31,12 +31,13 @@ class GeneRegulatoryNetwork(object):
     def __call__(self,
                  key,
                  y0=None,
+                 w0=None,
                  intervention_fn=None,
                  intervention_params=None,
                  perturbation_fn=None,
                  perturbation_params=None):
         key, skey = jrandom.split(key)
-        system = create_system_rollout_module(self.config, y0)
+        system = create_system_rollout_module(self.config, y0, w0)
         return system(skey, intervention_fn, intervention_params, perturbation_fn, perturbation_params)
 
     def set_time(self, n_secs):
