@@ -1,6 +1,5 @@
 import dataclasses
 from enum import IntEnum
-from multiprocessing import Pool
 
 import numpy as np
 import jax.numpy as jnp
@@ -8,8 +7,10 @@ from autodiscjax import DictTree
 from autodiscjax.modules import grnwrappers
 
 from model import *
-from plotting import plot_states_trajectory
 from utils import parse_args, set_seed
+
+
+MEMORIES = ["US", "PAIRING", "TRANSFER", "ASSOCIATIVE", "CONSOLIDATION"]
 
 
 class Regulation(IntEnum):
@@ -211,11 +212,15 @@ def learn(args):
     print(i)
     al = AssociativeLearning(seed=seed, model_id=i)
     al.pretest()
+    memories = [[] for _ in MEMORIES]
     for r in al.mem_circuits.keys():
-        memories = al.eval_mem_for_r(response=r)
-        print("\n===\n")
-        for name, memory in zip(["US", "PAIRING", "TRANSFER", "ASSOCIATIVE", "CONSOLIDATION"], memories):
-            print("{0}: {1}".format(name, sum(memory) / len(al.mem_circuits[r])))
+        new_memories = al.eval_mem_for_r(response=r)
+        for old_mem, new_mem in zip(memories, new_memories):
+            old_mem.extend(new_mem)
+    num_circuits = sum([len(c) for c in al.mem_circuits.values()])
+    print("\n===\n")
+    for name, memory in zip(["US", "PAIRING", "TRANSFER", "ASSOCIATIVE", "CONSOLIDATION"], memories):
+        print("{0}: {1}".format(name, sum(memory) / num_circuits))
 
 
 if __name__ == "__main__":
