@@ -76,7 +76,7 @@ class AssociativeLearning(object):
                     continue
                 for regulation in [Regulation(1), Regulation(2)]:
                     curr_circuits.append(self.pretest_for_r(response, stimulus, regulation))
-            self.mem_circuits[response] = curr_circuits
+            self.mem_circuits[response] = list(curr_circuits)
             curr_circuits.clear()
 
     def pretest_for_r(self, response, stimulus, regulation):
@@ -206,6 +206,8 @@ if __name__ == "__main__":
     set_seed(arguments.seed)
     results = []
     for idx in arguments.ids:
+        if idx != 27:
+            continue
         results.append(learn((arguments.seed, idx)))
     # with Pool(arguments.np) as pool:
     #     results.append(pool.map(learn, [(arguments.seed, idx) for idx in arguments.ids]))
