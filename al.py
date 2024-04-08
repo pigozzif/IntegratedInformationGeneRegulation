@@ -170,7 +170,7 @@ class AssociativeLearning(object):
                 e2 = self.stimulate(e1.ys[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
                 e3 = self.stimulate(e2.ys[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
                 is_mem = self.is_memory(e1, e3, ucs_circuit.response, up_down_r)
-                del e1, e3
+                del e2, e3
             del e1
 
     def is_r_regulated(self, e1, cs_circuit):

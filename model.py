@@ -16,7 +16,7 @@ class GeneRegulatoryNetwork(object):
                  rtol=1e-12,
                  mxstep=50000,
                  deltaT=0.01,
-                 n_secs=5 * 2500):
+                 n_secs=2 * 2500):
         self.config = Dict()
         self.config.system_type = system_type
         self.config.model_filepath = model_filepath  # path of model class that we just created
