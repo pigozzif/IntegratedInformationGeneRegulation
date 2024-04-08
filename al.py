@@ -10,7 +10,7 @@ from model import *
 from utils import parse_args, set_seed
 
 
-MEMORIES = ["US", "PAIRING", "TRANSFER", "ASSOCIATIVE", "CONSOLIDATION"]
+MEMORIES = ["US", "PAIRING", "TRANSFER", "ASSOCIATIVE", "CONSOLIDATION", "NO"]
 
 
 class Regulation(IntEnum):
@@ -118,11 +118,11 @@ class AssociativeLearning(object):
         cs_list = [circuit for circuit in self.mem_circuits[response] if not circuit.is_ucs]
         us, pairing, transfer, associative, consolidation = [], [], [], [], []
         for ucs_circuit in [circuit for circuit in self.mem_circuits[response] if circuit.is_ucs]:
-            us.extend([self.is_us_memory(ucs_circuit)])
-            pairing.extend(self.is_pairing_memory(ucs_circuit, cs_list))
-            transfer.extend(self.is_transfer_memory(ucs_circuit, cs_list))
-            associative.extend(self.is_associative_memory(ucs_circuit, cs_list))
-            consolidation.extend(self.is_consolidation_memory(ucs_circuit, cs_list))
+            us.append(self.is_us_memory(ucs_circuit))
+            pairing.append(self.is_pairing_memory(ucs_circuit, cs_list))
+            transfer.append(self.is_transfer_memory(ucs_circuit, cs_list))
+            associative.append(self.is_associative_memory(ucs_circuit, cs_list))
+            consolidation.append(self.is_consolidation_memory(ucs_circuit, cs_list))
         return us, pairing, transfer, associative, consolidation
 
     def is_us_memory(self, ucs_circuit):
@@ -133,58 +133,66 @@ class AssociativeLearning(object):
         return is_mem
 
     def is_pairing_memory(self, ucs_circuit, cs_list):
-        is_mem = []
+        is_mem = False
         for cs_circuit in cs_list:
             if ucs_circuit.stimulus == cs_circuit.stimulus:
                 continue
+            elif is_mem:
+                break
             e1 = self.stimulate(self.genes_ss, self.w_ss, [ucs_circuit.stimulus, cs_circuit.stimulus],
                                 [ucs_circuit.stimulus_reg, cs_circuit.stimulus_reg])
             up_down_r = self.is_r_regulated(e1, cs_circuit)
             if int(up_down_r) != 0:
                 e2 = self.relax(y0=e1.ys[:, -1], w0=e1.ws[:, -1])
-                is_mem.append(self.is_memory(e1, e2, ucs_circuit.response, up_down_r))
+                is_mem = self.is_memory(e1, e2, ucs_circuit.response, up_down_r)
                 del e2
             del e1
         return is_mem
 
     def is_transfer_memory(self, ucs_circuit, cs_list):
-        is_mem = []
+        is_mem = False
         for cs_circuit in cs_list:
             if ucs_circuit.stimulus == cs_circuit.stimulus:
                 continue
+            elif is_mem:
+                break
             e1 = self.stimulate(self.genes_ss, self.w_ss, ucs_circuit.stimulus, ucs_circuit.stimulus_reg)
             e2 = self.stimulate(e1.ys[:, -1], e1.ws[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
-            is_mem.append(self.is_memory(e1, e2, ucs_circuit.response, ucs_circuit.response_reg))
+            is_mem = self.is_memory(e1, e2, ucs_circuit.response, ucs_circuit.response_reg)
             del e1, e2
         return is_mem
 
     def is_associative_memory(self, ucs_circuit, cs_list):
-        is_mem = []
+        is_mem = False
         for cs_circuit in cs_list:
             if ucs_circuit.stimulus == cs_circuit.stimulus:
                 continue
+            elif is_mem:
+                break
             e1 = self.stimulate(self.genes_ss, self.w_ss, [ucs_circuit.stimulus, cs_circuit.stimulus],
                                 [ucs_circuit.stimulus_reg, cs_circuit.stimulus_reg])
             up_down_r = self.is_r_regulated(e1, cs_circuit)
             if int(up_down_r) != 0:
                 e2 = self.stimulate(e1.ys[:, -1], e1.ws[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
-                is_mem.append(self.is_memory(e1, e2, ucs_circuit.response, up_down_r))
+                is_mem = self.is_memory(e1, e2, ucs_circuit.response, up_down_r)
                 del e2
             del e1
         return is_mem
 
     def is_consolidation_memory(self, ucs_circuit, cs_list):
-        is_mem = []
+        is_mem = False
         for cs_circuit in cs_list:
             if ucs_circuit.stimulus == cs_circuit.stimulus:
                 continue
+            elif is_mem:
+                break
             e1 = self.stimulate(self.genes_ss, self.w_ss, [ucs_circuit.stimulus, cs_circuit.stimulus],
                                 [ucs_circuit.stimulus_reg, cs_circuit.stimulus_reg])
             up_down_r = self.is_r_regulated(e1, cs_circuit)
             if int(up_down_r) != 0:
                 e2 = self.stimulate(e1.ys[:, -1], e1.ws[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
                 e3 = self.stimulate(e2.ys[:, -1], e2.ws[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
-                is_mem.append(self.is_memory(e1, e3, ucs_circuit.response, up_down_r))
+                is_mem = self.is_memory(e1, e3, ucs_circuit.response, up_down_r)
                 del e2, e3
             del e1
         return is_mem
@@ -207,31 +215,37 @@ class AssociativeLearning(object):
                 np.mean(self.relax_y[response, :]) - np.mean(e1.ys[response, :])) / 2.0
 
 
-def learn(args):
-    seed, i = args
-    print(i)
+def learn(seed, i, file_name):
     al = AssociativeLearning(seed=seed, model_id=i)
     al.pretest()
-    memories = [[] for _ in MEMORIES]
+    memories = [[] for _ in MEMORIES[:-1]]
     for r in al.mem_circuits.keys():
         new_memories = al.eval_mem_for_r(response=r)
         for old_mem, new_mem in zip(memories, new_memories):
             old_mem.extend(new_mem)
-    num_circuits = sum([len(c) for c in al.mem_circuits.values()])
-    print("\n===\n")
-    for name, memory in zip(["US", "PAIRING", "TRANSFER", "ASSOCIATIVE", "CONSOLIDATION"], memories):
-        print("{0}: {1}".format(name, sum(memory) / num_circuits))
+    num_ucs_circuits = sum([len([_c for _c in c if _c.is_ucs]) for c in al.mem_circuits.values()])
+    with open(file_name, "a") as file:
+        num_no_mem = 0
+        for i in range(num_ucs_circuits):
+            for mem in memories:
+                if mem[i]:
+                    break
+            else:
+                num_no_mem += 1
+        file.write(";".join([str(i)] + [str(sum(mem) / num_ucs_circuits) for mem in memories] +
+                            [str(num_no_mem / num_ucs_circuits)]) + "\n")
 
 
 if __name__ == "__main__":
     # 26, 27, 29, 31
     arguments = parse_args()
     set_seed(arguments.seed)
-    results = []
-    for idx in arguments.ids:
-        if idx != 27:
-            continue
-        results.append(learn((arguments.seed, idx)))
+    if not os.path.exists(arguments.outfile):
+        with open(arguments.outfile, "w") as f:
+            f.write(";".join(["id"] + [mem.lower() for mem in MEMORIES]) + "\n")
+    learn(seed=arguments.seed,
+          i=arguments.id,
+          file_name=arguments.outfile)
     # with Pool(arguments.np) as pool:
     #     results.append(pool.map(learn, [(arguments.seed, idx) for idx in arguments.ids]))
     # fig1 = plot_states_trajectory(fig_name="figures/relax.png",
