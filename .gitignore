@@ -8,5 +8,6 @@
 *.json
 *.mp4
 *.mov
+*.sh
 data/*
 figures/*
