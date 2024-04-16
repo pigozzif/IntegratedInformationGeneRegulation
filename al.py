@@ -1,4 +1,5 @@
 import dataclasses
+import logging
 import multiprocessing
 from enum import IntEnum
 
@@ -247,13 +248,18 @@ if __name__ == "__main__":
     # 26, 27, 29, 31
     arguments = parse_args()
     set_seed(arguments.seed)
+    logger = logging.getLogger(__name__)
+
     if not os.path.exists(arguments.outfile):
         with open(arguments.outfile, "w") as f:
             f.write(";".join(["id"] + [mem.lower() for mem in MEMORIES]) + "\n")
+
     p = multiprocessing.Process(target=learn, args=(arguments.seed, arguments.id, arguments.outfile))
     p.start()
     p.join(arguments.timeout)
+
     if p.is_alive():
+        logger.info("Terminated network {} due to time".format(arguments.id))
         p.terminate()
         p.join()
     # with Pool(arguments.np) as pool:
