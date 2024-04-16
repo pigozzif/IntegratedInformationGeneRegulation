@@ -232,8 +232,11 @@ def learn(seed, i, file_name):
                     break
             else:
                 num_no_mem += 1
-        file.write(";".join([str(i)] + [str(sum(mem) / num_ucs_circuits) for mem in memories] +
-                            [str(num_no_mem / num_ucs_circuits)]) + "\n")
+        if not num_ucs_circuits:
+            file.write(";".join(["0.0" for _ in memories] + ["0.0"]) + "\n")
+        else:
+            file.write(";".join([str(i)] + [str(sum(mem) / num_ucs_circuits) for mem in memories] +
+                                [str(num_no_mem / num_ucs_circuits)]) + "\n")
 
 
 if __name__ == "__main__":
