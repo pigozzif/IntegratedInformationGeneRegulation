@@ -9,7 +9,7 @@ import numpy as np
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--id", type=list, default=27)
+    parser.add_argument("--id", type=int, default=27)
     parser.add_argument("--outfile", type=str, default="memories.txt")
     parser.add_argument("--np", type=int, default=7)
     return parser.parse_args()
