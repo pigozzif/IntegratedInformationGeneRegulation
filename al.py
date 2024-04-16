@@ -253,6 +253,9 @@ if __name__ == "__main__":
             f.write(";".join(["id"] + [mem.lower() for mem in MEMORIES]) + "\n")
     p = multiprocessing.Process(target=learn, args=(arguments.seed, arguments.id, arguments.outfile))
     p.join(arguments.timeout)
+    if p.is_alive():
+        p.terminate()
+        p.join()
     # with Pool(arguments.np) as pool:
     #     results.append(pool.map(learn, [(arguments.seed, idx) for idx in arguments.ids]))
     # fig1 = plot_states_trajectory(fig_name="figures/relax.png",
