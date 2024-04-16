@@ -9,7 +9,6 @@ from autodiscjax.modules import grnwrappers
 from model import *
 from utils import parse_args, set_seed
 
-
 MEMORIES = ["US", "PAIRING", "TRANSFER", "ASSOCIATIVE", "CONSOLIDATION", "NO"]
 
 
@@ -200,10 +199,12 @@ class AssociativeLearning(object):
     def is_r_regulated(self, e1, cs_circuit):
         response = cs_circuit.response
         if np.mean(e1.ys[response, :]) >= self.r_scale_up * np.mean(self.relax_y[response, :]) \
-                and np.mean(e1.ys[response, :]) >= self.r_scale_up * np.mean(self.reference.ys[response, self.relax_t:self.relax_t * 2]):
+                and np.mean(e1.ys[response, :]) >= self.r_scale_up * np.mean(
+            self.reference.ys[response, self.relax_t:self.relax_t * 2]):
             return Regulation(1)
         elif np.mean(e1.ys[response, :]) <= (1 / self.r_scale_up) * np.mean(self.relax_y[response, :]) \
-                and np.mean(e1.ys[response, :]) <= (1 / self.r_scale_up) * np.mean(self.reference.ys[response, self.relax_t:self.relax_t * 2]):
+                and np.mean(e1.ys[response, :]) <= (1 / self.r_scale_up) * np.mean(
+            self.reference.ys[response, self.relax_t:self.relax_t * 2]):
             return Regulation(2)
         return Regulation(0)
 
@@ -225,10 +226,10 @@ def learn(seed, i, file_name):
             old_mem.extend(new_mem)
     num_ucs_circuits = sum([len([_c for _c in c if _c.is_ucs]) for c in al.mem_circuits.values()])
     if num_ucs_circuits:
-        write_output(file_name, memories, num_ucs_circuits)
+        write_output(i, file_name, memories, num_ucs_circuits)
 
 
-def write_output(file_name, memories, num_ucs_circuits):
+def write_output(model_id, file_name, memories, num_ucs_circuits):
     with open(file_name, "a") as file:
         num_no_mem = 0
         for i in range(num_ucs_circuits):
@@ -237,8 +238,8 @@ def write_output(file_name, memories, num_ucs_circuits):
                     break
             else:
                 num_no_mem += 1
-        file.write(";".join([str(i)] + [str(sum(mem) / num_ucs_circuits) for mem in memories] +
-                                [str(num_no_mem / num_ucs_circuits)]) + "\n")
+        file.write(";".join([str(model_id)] + [str(sum(mem) / num_ucs_circuits) for mem in memories] +
+                            [str(num_no_mem / num_ucs_circuits)]) + "\n")
 
 
 if __name__ == "__main__":
