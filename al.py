@@ -217,8 +217,7 @@ class AssociativeLearning(object):
                 np.mean(self.relax_y[response, :]) - np.mean(e1.ys[response, :])) / 2.0
 
 
-def learn(args):
-    seed, i, file_name = args
+def learn(seed, i, file_name):
     al = AssociativeLearning(seed=seed, model_id=i)
     al.pretest()
     memories = [[] for _ in MEMORIES[:-1]]
@@ -252,6 +251,7 @@ if __name__ == "__main__":
         with open(arguments.outfile, "w") as f:
             f.write(";".join(["id"] + [mem.lower() for mem in MEMORIES]) + "\n")
     p = multiprocessing.Process(target=learn, args=(arguments.seed, arguments.id, arguments.outfile))
+    p.start()
     p.join(arguments.timeout)
     if p.is_alive():
         p.terminate()
