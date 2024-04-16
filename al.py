@@ -224,6 +224,11 @@ def learn(seed, i, file_name):
         for old_mem, new_mem in zip(memories, new_memories):
             old_mem.extend(new_mem)
     num_ucs_circuits = sum([len([_c for _c in c if _c.is_ucs]) for c in al.mem_circuits.values()])
+    if num_ucs_circuits:
+        write_output(file_name, memories, num_ucs_circuits)
+
+
+def write_output(file_name, memories, num_ucs_circuits):
     with open(file_name, "a") as file:
         num_no_mem = 0
         for i in range(num_ucs_circuits):
@@ -232,10 +237,7 @@ def learn(seed, i, file_name):
                     break
             else:
                 num_no_mem += 1
-        if not num_ucs_circuits:
-            file.write(";".join(["0.0" for _ in memories] + ["0.0"]) + "\n")
-        else:
-            file.write(";".join([str(i)] + [str(sum(mem) / num_ucs_circuits) for mem in memories] +
+        file.write(";".join([str(i)] + [str(sum(mem) / num_ucs_circuits) for mem in memories] +
                                 [str(num_no_mem / num_ucs_circuits)]) + "\n")
 
 
