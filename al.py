@@ -1,4 +1,5 @@
 import dataclasses
+import multiprocessing
 from enum import IntEnum
 
 import numpy as np
@@ -216,7 +217,8 @@ class AssociativeLearning(object):
                 np.mean(self.relax_y[response, :]) - np.mean(e1.ys[response, :])) / 2.0
 
 
-def learn(seed, i, file_name):
+def learn(args):
+    seed, i, file_name = args
     al = AssociativeLearning(seed=seed, model_id=i)
     al.pretest()
     memories = [[] for _ in MEMORIES[:-1]]
@@ -249,9 +251,8 @@ if __name__ == "__main__":
     if not os.path.exists(arguments.outfile):
         with open(arguments.outfile, "w") as f:
             f.write(";".join(["id"] + [mem.lower() for mem in MEMORIES]) + "\n")
-    learn(seed=arguments.seed,
-          i=arguments.id,
-          file_name=arguments.outfile)
+    p = multiprocessing.Process(target=learn, args=(arguments.seed, arguments.id, arguments.outfile))
+    p.join(arguments.timeout)
     # with Pool(arguments.np) as pool:
     #     results.append(pool.map(learn, [(arguments.seed, idx) for idx in arguments.ids]))
     # fig1 = plot_states_trajectory(fig_name="figures/relax.png",
