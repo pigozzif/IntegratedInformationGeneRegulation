@@ -85,12 +85,6 @@ class AssociativeLearning(object):
 
     def pretest_for_r(self, response, stimulus, regulation):
         x2 = self.stimulate(self.genes_ss, self.w_ss, stimulus, regulation)
-        # fig = plot_states_trajectory(fig_name="figures/{0}-{1}-{2}.png".format(response, stimulus, int(regulation)),
-        #                              system_rollout=create_system_rollout_module(grn.config, y0=relax_y[:, -1]),
-        #                              system_outputs=x2,
-        #                              observed_node_ids=[response, stimulus],
-        #                              observed_node_names={response: "R", stimulus: "ST"})
-        # fig.show()
         if np.mean(x2.ys[response, :]) >= self.r_scale_up * np.mean(self.relax_y[response, :]) and np.mean(
                 x2.ys[response, :]) >= self.r_scale_up * np.mean(
             self.reference.ys[response, self.relax_t:self.relax_t * 2]):
@@ -114,10 +108,10 @@ class AssociativeLearning(object):
                              is_ucs=False)
 
     def eval_mem_for_r(self, response):
-        if not self.mem_circuits[response]:
-            return
-        cs_list = [circuit for circuit in self.mem_circuits[response] if not circuit.is_ucs]
         us, pairing, transfer, associative, consolidation = [], [], [], [], []
+        if not self.mem_circuits[response] or response == 0:
+            return us, pairing, transfer, associative, consolidation
+        cs_list = [circuit for circuit in self.mem_circuits[response] if not circuit.is_ucs]
         for ucs_circuit in [circuit for circuit in self.mem_circuits[response] if circuit.is_ucs]:
             us.append(self.is_us_memory(ucs_circuit))
             pairing.append(self.is_pairing_memory(ucs_circuit, cs_list))
@@ -200,12 +194,13 @@ class AssociativeLearning(object):
 
     def is_r_regulated(self, e1, cs_circuit):
         response = cs_circuit.response
-        if np.mean(e1.ys[response, :]) >= self.r_scale_up * np.mean(self.relax_y[response, :]) \
-                and np.mean(e1.ys[response, :]) >= self.r_scale_up * np.mean(
+        mean_e1 = np.mean(e1.ys[response, :])
+        if mean_e1 >= self.r_scale_up * np.mean(self.relax_y[response, :]) \
+                and mean_e1 >= self.r_scale_up * np.mean(
             self.reference.ys[response, self.relax_t:self.relax_t * 2]):
             return Regulation(1)
-        elif np.mean(e1.ys[response, :]) <= (1 / self.r_scale_up) * np.mean(self.relax_y[response, :]) \
-                and np.mean(e1.ys[response, :]) <= (1 / self.r_scale_up) * np.mean(
+        elif mean_e1 <= (1 / self.r_scale_up) * np.mean(self.relax_y[response, :]) \
+                and mean_e1 <= (1 / self.r_scale_up) * np.mean(
             self.reference.ys[response, self.relax_t:self.relax_t * 2]):
             return Regulation(2)
         return Regulation(0)
@@ -262,12 +257,3 @@ if __name__ == "__main__":
         logger.info("Terminated network {} due to time".format(arguments.id))
         p.terminate()
         p.join()
-    # with Pool(arguments.np) as pool:
-    #     results.append(pool.map(learn, [(arguments.seed, idx) for idx in arguments.ids]))
-    # fig1 = plot_states_trajectory(fig_name="figures/relax.png",
-    #                               system_rollout=create_system_rollout_module(grn.config),
-    #                               system_outputs=reference_output)
-    # fig1.show()
-    # Surama did 2500 + 500 s, I do 2500 + 2500 s (as in paper and as in relax)
-    # for c in circuits:
-    #     print(c)
