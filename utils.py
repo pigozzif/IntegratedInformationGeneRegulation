@@ -2,8 +2,8 @@ import argparse
 import importlib
 import random
 
-import autodiscjax.modules.grnwrappers as grn
 import numpy as np
+from autodiscjax.modules.grnwrappers import GRNRollout
 
 
 def parse_args():
@@ -36,8 +36,8 @@ def create_system_rollout_module(system_rollout_config, y0=None, w0=None):
             w0 = getattr(module, "w0")
         c = getattr(module, "c")
         t0 = getattr(module, "t0")
-        system_rollout = grn.GRNRollout(n_steps=system_rollout_config.n_system_steps, y0=y0, w0=w0, c=c, t0=t0,
-                                        deltaT=system_rollout_config.deltaT, grn_step=grnstep)
+        system_rollout = GRNRollout(n_steps=system_rollout_config.n_system_steps, y0=y0, w0=w0, c=c, t0=t0,
+                                    deltaT=system_rollout_config.deltaT, grn_step=grnstep)
 
     else:
         raise ValueError

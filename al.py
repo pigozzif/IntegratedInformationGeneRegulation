@@ -109,7 +109,7 @@ class AssociativeLearning(object):
 
     def eval_mem_for_r(self, response):
         us, pairing, transfer, associative, consolidation = [], [], [], [], []
-        if not self.mem_circuits[response] or response == 0:
+        if not self.mem_circuits[response]:
             return us, pairing, transfer, associative, consolidation
         cs_list = [circuit for circuit in self.mem_circuits[response] if not circuit.is_ucs]
         for ucs_circuit in [circuit for circuit in self.mem_circuits[response] if circuit.is_ucs]:
