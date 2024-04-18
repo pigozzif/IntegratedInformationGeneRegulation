@@ -42,7 +42,7 @@ def preprocess_data(relax_y, e1, e2):
     data = zscore(data, axis=1)
     data = global_signal_regression(data)
     data = remove_autocorrelation(data)
-    return data[:, ::100]
+    return data
 
 
 def save_trajectory_for_r(al, response, dir_name):

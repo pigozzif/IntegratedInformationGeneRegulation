@@ -23,24 +23,21 @@ def compute_circuit_info(data):
     return info
 
 
-def compute_grn_info(model_id, file_name):
+def compute_grn_info(model_id):
     for root, dirs, files in os.walk(os.path.join("..", "trajectories", str(model_id))):
         for file in files:
             if not file.endswith("csv"):
                 continue
+            idx = file.split(".")[-2]
+            dir_name = os.path.join("info", str(model_id), str(idx))
+            os.makedirs(dir_name)
             data = np.genfromtxt(os.path.join(root, file), delimiter=",")
             info = compute_circuit_info(data=data)
-            with open(file_name, "a") as f:
-                f.write(";".join([str(model_id), str(file.split(".")[-2])] +
-                                 [",".join([str(elem) for elem in i]) for i in info.values()]) + "\n")
+            for k, v in info.items():
+                np.savetxt(os.path.join(dir_name, ".".join([k, "csv"])), v, delimiter=",")
 
 
 if __name__ == "__main__":
     sys.path.append("integration.pyx")
     m_id = 27
-    outfile = "info.txt"
-    if not os.path.exists(outfile):
-        with open(outfile, "w") as f:
-            f.write(";".join(["model_id", "mem_id", "synergy", "causation", "redundancy", "integrated"]) + "\n")
-
-    compute_grn_info(model_id=m_id, file_name=outfile)
+    compute_grn_info(model_id=m_id)
