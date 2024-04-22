@@ -1,3 +1,5 @@
+import logging
+import multiprocessing
 import os
 
 import numpy as np
@@ -55,7 +57,7 @@ def save_trajectory_for_r(al, response, dir_name):
             train_data = train_associative(al, ucs_circuit, cs_circuit)
             if train_data["is_mem"]:
                 data = preprocess_data(al.relax_y, train_data["e1"], train_data["e2"])
-                np.savetxt(os.path.join(dir_name, ".".join([str(idx), "csv"])), data, delimiter=",")
+                np.save(os.path.join(dir_name, ".".join([str(idx), "npy"])), data)
                 idx += 1
 
 
@@ -87,7 +89,14 @@ if __name__ == "__main__":
     arguments = parse_args()
     set_seed(arguments.seed)
     dir_n = "trajectories/{}".format(arguments.id)
-    os.makedirs(dir_n)
-    save_grn_trajectories(seed=arguments.seed,
-                          model_id=arguments.id,
-                          dir_name=dir_n)
+    os.makedirs(dir_n, exist_ok=True)
+    logger = logging.getLogger(__name__)
+
+    p = multiprocessing.Process(target=save_grn_trajectories, args=(arguments.seed, arguments.id, dir_n))
+    p.start()
+    p.join(arguments.timeout)
+
+    if p.is_alive():
+        logger.info("Terminated network {} due to time".format(arguments.id))
+        p.terminate()
+        p.join()
