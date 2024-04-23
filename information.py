@@ -156,19 +156,19 @@ def mutual_information_matrix(x, alpha, lag=1, bonferonni=True):
                     mi = -0.5 * np.log(1 - (r ** 2.0))  # Gaussian MI from Pearson's r
                     mi_mat[i, j] = mi
                     mi_mat[j, i] = mi
-                elif lag > 0:
-                    r1, p1 = pearsonr(x[i, :-lag], x[j, lag:])
-                    r2, p2 = pearsonr(x[i, lag:], x[j, :-lag])
-                    if p1 < alpha_corr:
-                        mi1 = -0.5 * np.log(1.0 - (r1 ** 2.0))
-                    else:
-                        mi1 = 0
-                    if p2 < alpha_corr:
-                        mi2 = -0.5 * np.log(1.0 - (r2 ** 2.0))
-                    else:
-                        mi2 = 0
-                    mi_mat[i, j] = mi1 + mi2
-                    mi_mat[j, i] = mi1 + mi2
+            elif lag > 0:
+                r1, p1 = pearsonr(x[i, :-lag], x[j, lag:])
+                r2, p2 = pearsonr(x[i, lag:], x[j, :-lag])
+                if p1 < alpha_corr:
+                    mi1 = -0.5 * np.log(1.0 - (r1 ** 2.0))
+                else:
+                    mi1 = 0
+                if p2 < alpha_corr:
+                    mi2 = -0.5 * np.log(1.0 - (r2 ** 2.0))
+                else:
+                    mi2 = 0
+                mi_mat[i, j] = mi1 + mi2
+                mi_mat[j, i] = mi1 + mi2
     return np.array(mi_mat)
 
 
