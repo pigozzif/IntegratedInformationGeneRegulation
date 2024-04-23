@@ -86,9 +86,6 @@ def compute_circuit_info(data):
 
 
 if __name__ == "__main__":
-    import warnings
-    warnings.filterwarnings("ignore")
-
     arguments = parse_args()
     set_seed(arguments.seed)
     logger = logging.getLogger(__name__)
