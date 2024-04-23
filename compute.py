@@ -1,10 +1,64 @@
+import logging
+import multiprocessing
 import os
-import sys
 
 import numpy as np
+from scipy.stats import zscore
 
-from information import mutual_information_matrix, minimum_information_bipartition, local_phi_id, local_phi_r
+from al import AssociativeLearning
+from information import mutual_information_matrix, minimum_information_bipartition, local_phi_id, local_phi_r, \
+    global_signal_regression, remove_autocorrelation
 from plotting import plot_info_measures
+from utils import parse_args, set_seed
+
+
+def preprocess_data(relax_y, e1, e2):
+    data = np.hstack([relax_y, e1.ys, e2.ys])
+    data = zscore(data, axis=1)
+    data = global_signal_regression(data)
+    data = remove_autocorrelation(data)
+    return data
+
+
+def compute_info_for_r(al, response, model_id):
+    if not al.mem_circuits[response]:
+        return
+    cs_list = [circuit for circuit in al.mem_circuits[response] if not circuit.is_ucs]
+    idx = 0
+    for ucs_circuit in [circuit for circuit in al.mem_circuits[response] if circuit.is_ucs]:
+        for cs_circuit in cs_list:
+            train_data = train_associative(al, ucs_circuit, cs_circuit)
+            if train_data["is_mem"]:
+                data = preprocess_data(al.relax_y, train_data["e1"], train_data["e2"])
+                info = compute_circuit_info(data=data)
+                plot_info_measures(info=info,
+                                   file_name=os.path.join("plots",
+                                                          ".".join([str(model_id), str(response), str(idx), "png"])))
+                idx += 1
+
+
+def train_associative(al, ucs_circuit, cs_circuit):
+    train_data = {"is_mem": False}
+    if ucs_circuit.stimulus == cs_circuit.stimulus:
+        return train_data
+    e1 = al.stimulate(al.genes_ss, al.w_ss, [ucs_circuit.stimulus, cs_circuit.stimulus],
+                      [ucs_circuit.stimulus_reg, cs_circuit.stimulus_reg])
+    train_data["e1"] = e1
+    up_down_r = al.is_r_regulated(e1, cs_circuit)
+    if int(up_down_r) != 0:
+        e2 = al.stimulate(e1.ys[:, -1], e1.ws[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
+        is_mem = al.is_memory(e1, e2, ucs_circuit.response, up_down_r)
+        train_data["is_mem"] = is_mem
+        train_data["e2"] = e2
+        return train_data
+    return train_data
+
+
+def compute_grn_info(seed, model_id):
+    al = AssociativeLearning(seed=seed, model_id=model_id)
+    al.pretest()
+    for r in al.mem_circuits.keys():
+        compute_info_for_r(al, r, model_id)
 
 
 def moving_average(a, n=3):
@@ -30,20 +84,16 @@ def compute_circuit_info(data):
     return info
 
 
-def compute_grn_info(model_id):
-    for root, dirs, files in os.walk(os.path.join("", "trajectories")):
-        for file in files:
-            if not file.endswith("npy"):
-                continue
-            idx = file.split(".")[-2]
-            file_name = os.path.join(root, file)
-            data = np.load(file_name)
-            info = compute_circuit_info(data=data)
-            plot_info_measures(info=info,
-                               file_name=os.path.join("integration/plots", ".".join([str(model_id), str(idx), "png"])))
-
-
 if __name__ == "__main__":
-    sys.path.append("integration/integration.pyx")
-    m_id = int(sys.argv[1])
-    compute_grn_info(model_id=m_id)
+    arguments = parse_args()
+    set_seed(arguments.seed)
+    logger = logging.getLogger(__name__)
+
+    p = multiprocessing.Process(target=compute_grn_info, args=(arguments.seed, arguments.id))
+    p.start()
+    p.join(arguments.timeout)
+
+    if p.is_alive():
+        logger.info("Terminated network {} due to time".format(arguments.id))
+        p.terminate()
+        p.join()
