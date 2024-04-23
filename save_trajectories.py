@@ -3,40 +3,11 @@ import multiprocessing
 import os
 
 import numpy as np
-from scipy.stats import zscore, linregress
+from scipy.stats import zscore
 
 from utils import set_seed, parse_args
 from al import AssociativeLearning
-
-
-def remove_autocorrelation(x):
-    n0 = x.shape[0]
-    n1 = x.shape[1]
-    regressed = np.zeros((n0, n1 - 1))
-    for i in range(n0):  # Each row is regressed independently of all others.
-        x_i = x[i].copy()
-        # Computing the linear correlation between time {t-1} and time {t}
-        lr = linregress(x_i[:-1], x_i[1:])
-        # The predicted values at time {t} given the regression.
-        ypred = lr[1] + (lr[0] * x_i[:-1])
-        # Computing the residuals.
-        residuals = np.subtract(x_i[1:], ypred)
-        regressed[i, :] = residuals
-    return zscore(regressed, axis=-1)
-
-
-def global_signal_regression(x):
-    n0 = x.shape[0]
-    n1 = x.shape[1]
-    gsr = np.zeros((n0, n1), dtype=np.float64)  # Initialize GSR array
-    mean = np.mean(x, axis=0)  # Compute global signal
-    for i in range(n0):
-        lr = linregress(mean, x[i])  # Linregress each channel against the GS
-        ypred = lr[1] + (lr[0] * mean)
-        z = np.subtract(x[i], ypred)  # Regress out
-        for j in range(n1):  # No need to iterate over columns, but it's fine.
-            gsr[i, j] = z[j]  # From an earlier function in C.
-    return zscore(gsr, axis=-1)
+from information import remove_autocorrelation, global_signal_regression
 
 
 def preprocess_data(relax_y, e1, e2):
