@@ -4,12 +4,6 @@ import matplotlib.pyplot as plt
 
 
 def downsample_traj(traj, scaling_vector=np.ones((2,)), eps=0.05):
-    """
-    traj: (2, T) array
-    scaling_vector: 2D array
-    eps: we discard all points that are closer to eps
-    """
-
     scaling_vector = scaling_vector[:, np.newaxis]
     traj = traj / scaling_vector
     traj_filt = [traj[:, i] for i in range(10)]

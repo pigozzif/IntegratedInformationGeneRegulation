@@ -35,6 +35,7 @@ def compute_info_for_r(al, response, model_id):
                                    file_name=os.path.join("plots",
                                                           ".".join([str(model_id), str(response), str(idx), "png"])))
                 idx += 1
+                del data
 
 
 def train_associative(al, ucs_circuit, cs_circuit):
