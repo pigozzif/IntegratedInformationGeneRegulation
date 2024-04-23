@@ -8,7 +8,9 @@ Created on Fri Sep 22 12:26:20 2023
 
 """
 
-#%% Imports 
+#%% Imports
+import pickle
+
 import cython
 cimport cython
 from libc.math cimport log
@@ -31,7 +33,7 @@ ctypedef np.float64_t DTYPE_double_t
 ctypedef np.int64_t DTYPE_int_t
 
 #%% Annoying boilerplate for the integrated information decomposition. 
-lattice_orig = nx.read_gpickle("phi_lattice_22.pickle")    
+lattice_orig = pickle.load(open("phi_lattice_22.pickle", "rb"))
 distances = nx.shortest_path_length(lattice_orig, target = (((0,),(1,)),((0,),(1,))))
 
 cdef list order = []
