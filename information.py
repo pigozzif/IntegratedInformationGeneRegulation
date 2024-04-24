@@ -119,9 +119,9 @@ def remove_autocorrelation(x):
         # Computing the linear correlation between time {t-1} and time {t}
         lr = linregress(x_i[:-1], x_i[1:])
         # The predicted values at time {t} given the regression.
-        ypred = lr[1] + (lr[0] * x_i[:-1])
+        y_pred = lr[1] + (lr[0] * x_i[:-1])
         # Computing the residuals.
-        residuals = np.subtract(x_i[1:], ypred)
+        residuals = np.subtract(x_i[1:], y_pred)
         regressed[i, :] = residuals
     return zscore(regressed, axis=-1)
 
@@ -133,8 +133,8 @@ def global_signal_regression(x):
     mean = np.mean(x, axis=0)  # Compute global signal
     for i in range(n0):
         lr = linregress(mean, x[i])  # Linregress each channel against the GS
-        ypred = lr[1] + (lr[0] * mean)
-        z = np.subtract(x[i], ypred)  # Regress out
+        y_pred = lr[1] + (lr[0] * mean)
+        z = np.subtract(x[i], y_pred)  # Regress out
         for j in range(n1):  # No need to iterate over columns, but it's fine.
             gsr[i, j] = z[j]  # From an earlier function in C.
     return zscore(gsr, axis=-1)

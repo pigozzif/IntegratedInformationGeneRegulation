@@ -12,8 +12,7 @@ from plotting import plot_info_measures
 from utils import parse_args, set_seed
 
 
-def preprocess_data(relax_y, e1, e2):
-    data = np.hstack([relax_y, e1.ys, e2.ys])
+def preprocess_data(data):
     data = zscore(data, axis=1)
     data = global_signal_regression(data)
     data = remove_autocorrelation(data)
@@ -29,13 +28,17 @@ def compute_info_for_r(al, response, model_id):
         for cs_circuit in cs_list:
             train_data = train_associative(al, ucs_circuit, cs_circuit)
             if train_data["is_mem"]:
-                data = preprocess_data(al.relax_y, train_data["e1"], train_data["e2"])
-                info = compute_circuit_info(data=data)
+                data = np.hstack([al.relax_y, train_data["e1"].ys, train_data["e2"].ys])
+                processed_data = preprocess_data(data)
+                info = compute_circuit_info(data=processed_data)
                 plot_info_measures(info=info,
+                                   data=data,
                                    file_name=os.path.join("plots",
                                                           ".".join([str(model_id), str(response), str(idx), "png"])))
                 idx += 1
-                del data
+                del processed_data, data
+                if idx >= 2:
+                    return
 
 
 def train_associative(al, ucs_circuit, cs_circuit):
@@ -63,13 +66,13 @@ def compute_grn_info(seed, model_id):
 
 
 def moving_average(a, n=3):
-    ret = np.nancumsum(a, dtype=float)
+    ret = np.nancumsum(a, dtype=np.float64)
     ret[n:] = ret[n:] - ret[:-n]
     return ret[n - 1:] / n
 
 
 def compute_circuit_info(data):
-    data = data.astype(np.float64)
+    data = data.astype(np.float64, copy=False)
     info = {}
     mi_mat = mutual_information_matrix(data, alpha=1, bonferonni=False, lag=1)
     mib = minimum_information_bipartition(mi_mat)
