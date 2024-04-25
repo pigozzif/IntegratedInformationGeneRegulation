@@ -24,6 +24,23 @@ PHIR_ATOMS = {  # Only used for the phi_r function.
 }
 
 
+def corrected_zscore(data, axis=1, noise=10 ** -6):
+    data = zscore(data, axis=axis)
+    # data[np.isnan(data)] = 0.0
+    for i, row in enumerate(data):
+        if all(np.isnan(row)):
+            data[i] = np.random.normal(loc=0.0, scale=noise, size=len(row))
+    return data
+
+
+def corrected_linregress(x, y):
+    return linregress(x, y)
+    #try:
+    #    return linregress(x, y)
+    # except ValueError:
+    #    return 0.0, 0.0
+
+
 def local_entropy_1d(idx1, x):
     mu = x[idx1].mean()  # Central tendency
     sigma = x[idx1].std()  # Standard deviation
@@ -117,27 +134,27 @@ def remove_autocorrelation(x):
     for i in range(n0):  # Each row is regressed independently of all others.
         x_i = x[i].copy()
         # Computing the linear correlation between time {t-1} and time {t}
-        lr = linregress(x_i[:-1], x_i[1:])
+        lr = corrected_linregress(x_i[:-1], x_i[1:])
         # The predicted values at time {t} given the regression.
-        y_pred = lr[1] + (lr[0] * x_i[:-1])
+        y_pred = lr[1] + np.nanprod([np.repeat(lr[0], len(x_i[:-1])), x_i[:-1]], axis=0)
         # Computing the residuals.
-        residuals = np.subtract(x_i[1:], y_pred)
+        residuals = np.nansum([x_i[1:], -y_pred], axis=0)
         regressed[i, :] = residuals
-    return zscore(regressed, axis=-1)
+    return corrected_zscore(regressed, axis=-1)
 
 
 def global_signal_regression(x):
     n0 = x.shape[0]
     n1 = x.shape[1]
     gsr = np.zeros((n0, n1), dtype=np.float64)  # Initialize GSR array
-    mean = np.mean(x, axis=0)  # Compute global signal
+    mean = np.nanmean(x, axis=0)  # Compute global signal
     for i in range(n0):
-        lr = linregress(mean, x[i])  # Linregress each channel against the GS
+        lr = corrected_linregress(mean, x[i])  # Linregress each channel against the GS
         y_pred = lr[1] + (lr[0] * mean)
-        z = np.subtract(x[i], y_pred)  # Regress out
+        z = np.nansum([x[i], -y_pred], axis=0)  # Regress out
         for j in range(n1):  # No need to iterate over columns, but it's fine.
             gsr[i, j] = z[j]  # From an earlier function in C.
-    return zscore(gsr, axis=-1)
+    return corrected_zscore(gsr, axis=-1)
 
 
 def mutual_information_matrix(x, alpha, lag=1, bonferonni=True):

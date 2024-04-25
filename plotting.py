@@ -23,14 +23,14 @@ def moving_average(a, n=3):
     return ret[n - 1:] / n
 
 
-def plot_trajectories(system_rollout, ax=None, t=-1):
+def plot_trajectories(system_rollout, min_v, max_v, ax=None):
     if ax is None:
         fig, ax = plt.subplots(figsize=(10, 5), nrows=1, ncols=1)
     for i, species in enumerate(system_rollout):
-        ax.plot(species[:t], label=str(i))
-    ax.legend()
+        ax.plot(species, label=str(i))
     ax.set_xlabel("time steps", fontsize=15)
     ax.set_ylabel("[muM]", fontsize=15)
+    ax.set_ylim(min_v - 0.5 * min_v, max_v + 0.5 * max_v)
 
 
 def plot_info_measures(info, data, file_name):
@@ -40,13 +40,17 @@ def plot_info_measures(info, data, file_name):
               "causation": "down. causality",
               "redundancy": "pers. redundancy",
               "integrated": "int. information"}
-    plot_trajectories(system_rollout=data, ax=axes[0], t=250000)
+    for ax in axes:
+        ax.axvline(250000, color="red")
+        ax.axvline(500000, color="red")
+    plot_trajectories(system_rollout=data,
+                      ax=axes[0],
+                      min_v=np.min(data[:, 250000 - 1]),
+                      max_v=np.max(data[:, 250000 - 1]))
     for measure, data in info.items():
         row = rows[measure] + 1
         ma = moving_average(data, n=100)
         axes[row].plot(ma, linewidth=1)
-        axes[row].axvline(250000, color="red")
-        axes[row].axvline(500000, color="red")
         if row == len(axes) - 1:
             axes[row].set_xlabel("time steps", fontsize=15)
         axes[row].set_ylabel(titles[measure], fontsize=15, rotation=90)

@@ -3,17 +3,16 @@ import multiprocessing
 import os
 
 import numpy as np
-from scipy.stats import zscore
 
 from al import AssociativeLearning
 from information import mutual_information_matrix, minimum_information_bipartition, local_phi_id, local_phi_r, \
-    global_signal_regression, remove_autocorrelation
+    global_signal_regression, remove_autocorrelation, corrected_zscore
 from plotting import plot_info_measures
 from utils import parse_args, set_seed
 
 
 def preprocess_data(data):
-    data = zscore(data, axis=1)
+    data = corrected_zscore(data, axis=1)
     data = global_signal_regression(data)
     data = remove_autocorrelation(data)
     return data
@@ -36,7 +35,7 @@ def compute_info_for_r(al, response, model_id):
                                    file_name=os.path.join("plots",
                                                           ".".join([str(model_id), str(response), str(idx), "png"])))
                 idx += 1
-                del processed_data, data
+                del processed_data, data, info
                 if idx >= 2:
                     return
 
@@ -75,7 +74,7 @@ def compute_circuit_info(data):
     data = data.astype(np.float64, copy=False)
     info = {}
     mi_mat = mutual_information_matrix(data, alpha=1, bonferonni=False, lag=1)
-    mib = minimum_information_bipartition(mi_mat)
+    mib = minimum_information_bipartition(mi_mat, noise=True)
     component_1 = data[mib[0], :].mean(axis=0)
     component_2 = data[mib[1], :].mean(axis=0)
     data_reduced = np.vstack((component_1, component_2))
@@ -86,6 +85,12 @@ def compute_circuit_info(data):
                          phi_results.nodes[(((0,), (1,)), ((0,), (1,)))]["pi"]
     info["integrated"] = local_phi_r(phi_results)
     return info
+
+# 1) Cyclic networks: II oscillates with expression levels, but training disrupts dynamics. Two cases:
+#    a) II collapses to zero;
+#    b) II spikes after training, then reverts to 0 (sleep)
+# 2) Other networks: II oscillates a little but after stimulation remains constant (sleep) != 0 or == 0
+# 3) Smaller networks -> more effect
 
 
 if __name__ == "__main__":
