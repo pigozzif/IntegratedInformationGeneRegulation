@@ -26,19 +26,10 @@ PHIR_ATOMS = {  # Only used for the phi_r function.
 
 def corrected_zscore(data, axis=1, noise=10 ** -6):
     data = zscore(data, axis=axis)
-    # data[np.isnan(data)] = 0.0
     for i, row in enumerate(data):
         if all(np.isnan(row)):
             data[i] = np.random.normal(loc=0.0, scale=noise, size=len(row))
     return data
-
-
-def corrected_linregress(x, y):
-    return linregress(x, y)
-    #try:
-    #    return linregress(x, y)
-    # except ValueError:
-    #    return 0.0, 0.0
 
 
 def local_entropy_1d(idx1, x):
@@ -134,7 +125,7 @@ def remove_autocorrelation(x):
     for i in range(n0):  # Each row is regressed independently of all others.
         x_i = x[i].copy()
         # Computing the linear correlation between time {t-1} and time {t}
-        lr = corrected_linregress(x_i[:-1], x_i[1:])
+        lr = linregress(x_i[:-1], x_i[1:])
         # The predicted values at time {t} given the regression.
         y_pred = lr[1] + np.nanprod([np.repeat(lr[0], len(x_i[:-1])), x_i[:-1]], axis=0)
         # Computing the residuals.
@@ -149,7 +140,7 @@ def global_signal_regression(x):
     gsr = np.zeros((n0, n1), dtype=np.float64)  # Initialize GSR array
     mean = np.nanmean(x, axis=0)  # Compute global signal
     for i in range(n0):
-        lr = corrected_linregress(mean, x[i])  # Linregress each channel against the GS
+        lr = linregress(mean, x[i])  # Linregress each channel against the GS
         y_pred = lr[1] + (lr[0] * mean)
         z = np.nansum([x[i], -y_pred], axis=0)  # Regress out
         for j in range(n1):  # No need to iterate over columns, but it's fine.
