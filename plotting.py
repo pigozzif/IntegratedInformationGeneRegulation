@@ -17,10 +17,8 @@ def downsample_traj(traj, scaling_vector=np.ones((2,)), eps=0.05):
     return traj_filt * scaling_vector, ids_filt
 
 
-def moving_average(a, n=3):
-    ret = np.nancumsum(a, dtype=float)
-    ret[n:] = ret[n:] - ret[:-n]
-    return ret[n - 1:] / n
+def moving_average(a, w):
+    return np.convolve(a, np.ones(w), "valid") / w
 
 
 def plot_trajectories(system_rollout, min_v, max_v, ax=None):
@@ -45,13 +43,14 @@ def plot_info_measures(info, data, file_name):
         ax.axvline(500000, color="red")
     plot_trajectories(system_rollout=data,
                       ax=axes[0],
-                      min_v=np.min(data[:, 250000 - 1]),
-                      max_v=np.max(data[:, 250000 - 1]))
+                      min_v=np.min(data[:, :250000 - 1]),
+                      max_v=np.max(data[:, :250000 - 1]))
     for measure, data in info.items():
         row = rows[measure] + 1
-        ma = moving_average(data, n=100)
-        axes[row].plot(ma, linewidth=1)
+        ma = moving_average(data, w=100)
+        axes[row].plot(ma.flatten(), linewidth=1)
         if row == len(axes) - 1:
             axes[row].set_xlabel("time steps", fontsize=15)
         axes[row].set_ylabel(titles[measure], fontsize=15, rotation=90)
     plt.savefig(file_name)
+    plt.clf()
