@@ -30,6 +30,7 @@ class MemoryCircuit(object):
 
 
 class AssociativeLearning(object):
+    NUM_PULSES = 5
 
     def __init__(self, seed, model_id, us_scale_up=100.0, r_scale_up=2.0, n_secs=2500, **kwargs):
         self.random_key = jrandom.PRNGKey(seed)
@@ -63,9 +64,16 @@ class AssociativeLearning(object):
         intervention_params = DictTree()
         for s, regulation in zip(stimulus, regulation):
             intervention_params.y[s] = jnp.array([self.bounds[s, int(regulation) % 2]])
+        intervals = []
+        window = self.grn.config.n_secs // (self.NUM_PULSES * 2)
+        for _ in stimulus:
+            start = 0
+            for pulse in range(self.NUM_PULSES):
+                intervals.append([start, start + window])
+                start += window * 2
         intervention_fn = grnwrappers.PiecewiseSetConstantIntervention(
             time_to_interval_fn=grnwrappers.TimeToInterval(
-                intervals=[[0, self.grn.config.n_secs * 2] for _ in stimulus]))
+                intervals=intervals))
         return self.grn(key=self.random_key,
                         y0=y0,
                         w0=w0,

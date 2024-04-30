@@ -10,5 +10,6 @@
 *.mov
 *.sh
 *.pickle
+*.zip
 data/*
 figures/*

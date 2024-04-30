@@ -32,7 +32,7 @@ def compute_info_for_r(al, response, model_id):
                 info = compute_circuit_info(data=processed_data)
                 plot_info_measures(info=info,
                                    data=data,
-                                   file_name=os.path.join("plots",
+                                   file_name=os.path.join("plots_pulses",
                                                           ".".join([str(model_id), str(response), str(idx), "png"])))
                 idx += 1
                 del processed_data, data, info
