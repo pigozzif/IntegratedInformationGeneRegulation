@@ -199,3 +199,59 @@ def minimum_information_bipartition(mi_mat, noise=False, noise_level=10 ** -6):
         [i for i in range(n0) if fiedler[i] < 0]
     ]
     return bipartition
+
+
+def local_total_correlation(x):
+    n0 = x.shape[0]
+    n1 = x.shape[1]
+    # The joint entropy of the whole
+    joint_ents = local_entropy_nd(x)
+    # Pre-allocating space for the sum of the local marginal entropies
+    sum_marginal_ents = np.zeros(n1, dtype=np.float64)
+    for i in range(n0):
+        marginal_ent = local_entropy_1d(i, x)
+        sum_marginal_ents = np.add(sum_marginal_ents, marginal_ent)
+    return np.subtract(sum_marginal_ents, joint_ents)
+
+
+def local_o_information(x, local_tc=None):
+    n0 = x.shape[0]
+    n1 = x.shape[1]
+    factor = (2.0 - n0)
+    whole_tc = np.multiply(factor, local_total_correlation(x) if local_tc is None else local_tc)
+    # Pre-allocating the sum of the local residual TCs
+    sum_residual_tcs = np.zeros(n1, dtype=np.float64)
+    # The local TC series of X_residual
+    for i in range(n0):
+        x_residuals = x[[j for j in range(n0) if j != i], :]
+        residual_tc = local_total_correlation(x_residuals)
+        sum_residual_tcs = np.add(sum_residual_tcs, residual_tc)
+    return np.add(whole_tc, sum_residual_tcs)
+
+
+def local_dual_total_correlation(x):
+    return np.subtract(local_total_correlation(x), local_o_information(x))
+
+
+def local_s_information(x):
+    return np.add(local_total_correlation(x), local_dual_total_correlation(x))
+
+
+def local_tse_complexity(x, num_samples=100):
+    n0 = x.shape[0]
+    n1 = x.shape[1]
+    tc_whole = local_total_correlation(x)
+    tse = np.zeros(n1, dtype=np.float64)
+    for k in range(1, n0):
+        factor = float(k) / n0
+        null_tc = np.multiply(factor, tc_whole)
+        sample_tcs_k = np.zeros(n1)
+        for i in range(num_samples):
+            if k > 1:
+                choice = np.random.choice(n0, k, replace=False)
+                x_choice = x[choice, :]
+                sample_tcs_k = np.add(sample_tcs_k, local_total_correlation(x_choice))
+        sample_tcs_k = np.divide(sample_tcs_k, float(num_samples))
+        diff = np.subtract(null_tc, sample_tcs_k)
+        tse = np.add(tse, diff)
+    return tse

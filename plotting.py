@@ -25,7 +25,7 @@ def plot_trajectories(system_rollout, min_v, max_v, ax=None):
     if ax is None:
         fig, ax = plt.subplots(figsize=(10, 5), nrows=1, ncols=1)
     for i, species in enumerate(system_rollout):
-        ax.plot(species, label=str(i))
+        ax.plot(species)
     ax.set_xlabel("time steps", fontsize=15)
     ax.set_ylabel("[muM]", fontsize=15)
     ax.set_ylim(min_v - 0.5 * min_v, max_v + 0.5 * max_v)
@@ -33,11 +33,15 @@ def plot_trajectories(system_rollout, min_v, max_v, ax=None):
 
 def plot_info_measures(info, data, file_name):
     fig, axes = plt.subplots(figsize=(15, 10), nrows=len(info) + 1, ncols=1)
-    rows = {"synergy": 0, "causation": 1, "redundancy": 2, "integrated": 3}
+    rows = {"synergy": 0, "causation": 1, "redundancy": 2, "integrated": 3, "tc": 0, "o": 1, "s": 2, "tse": 3}
     titles = {"synergy": "pers. synergy",
               "causation": "down. causality",
               "redundancy": "pers. redundancy",
-              "integrated": "int. information"}
+              "integrated": "int. information",
+              "tc": "total corr.",
+              "o": "o-inf.",
+              "s": "s-inf.",
+              "tse": "tse complexity"}
     for ax in axes:
         ax.axvline(250000, color="red")
         ax.axvline(500000, color="red")
