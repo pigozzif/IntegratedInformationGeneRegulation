@@ -124,12 +124,14 @@ if __name__ == "__main__":
     arguments = parse_args()
     set_seed(arguments.seed)
     logger = logging.getLogger(__name__)
-    with open("final.txt", "w") as file:
-        header = ["model_id", "circuit_id"]
-        for m in MEASURES:
-            for p in ["relax", "stimulate", "test"]:
-                header.append(".".join([m, str(p)]))
-        file.write(";".join(header) + "\n")
+    file_name = "final.txt"
+    if not os.path.exists(file_name):
+        with open(file_name, "w") as file:
+            header = ["model_id", "circuit_id"]
+            for m in MEASURES:
+                for p in ["relax", "stimulate", "test"]:
+                    header.append(".".join([m, str(p)]))
+            file.write(";".join(header) + "\n")
 
     p = multiprocessing.Process(target=compute_grn_info, args=(arguments.seed, arguments.id))
     p.start()
