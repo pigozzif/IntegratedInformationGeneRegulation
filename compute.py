@@ -6,9 +6,12 @@ import numpy as np
 
 from al import AssociativeLearning
 from information import mutual_information_matrix, minimum_information_bipartition, local_phi_id, local_phi_r, \
-    global_signal_regression, remove_autocorrelation, corrected_zscore
+    global_signal_regression, remove_autocorrelation, corrected_zscore, local_o_information, local_total_correlation, \
+    local_tse_complexity, local_s_information
 from plotting import plot_info_measures
 from utils import parse_args, set_seed
+
+MEASURES = ["synergy", "causation", "redundancy", "integrated", "emergence"]
 
 
 def preprocess_data(data):
@@ -32,12 +35,26 @@ def compute_info_for_r(al, response, model_id):
                 info = compute_circuit_info(data=processed_data)
                 plot_info_measures(info=info,
                                    data=data,
-                                   file_name=os.path.join("plots_pulses",
+                                   file_name=os.path.join("plots_final",
                                                           ".".join([str(model_id), str(response), str(idx), "png"])))
+                save_info_measures(info=info,
+                                   model_id=model_id,
+                                   circuit_id=idx)
                 idx += 1
                 del processed_data, data, info
                 if idx >= 2:
                     return
+
+
+def save_info_measures(info, model_id, circuit_id):
+    with open("final.txt", "a") as f:
+        measures = [str(model_id), str(circuit_id)]
+        start, period = 0, 250000
+        for _ in range(3):
+            for measure in MEASURES:
+                measures.append(np.nanmean(info[measure][start: start + period]))
+            start += period
+        f.write(";".join([str(measure) for measure in measures]) + "\n")
 
 
 def train_associative(al, ucs_circuit, cs_circuit):
@@ -70,7 +87,7 @@ def moving_average(a, n=3):
     return ret[n - 1:] / n
 
 
-def compute_circuit_info(data):
+def compute_circuit_info(data, also_static=False):
     data = data.astype(np.float64, copy=False)
     info = {}
     mi_mat = mutual_information_matrix(data, alpha=1, bonferonni=False, lag=1)
@@ -84,7 +101,17 @@ def compute_circuit_info(data):
     info["redundancy"] = phi_results.nodes[(((0,), (1,)), ((0,), (1,)))]["pi"] + \
                          phi_results.nodes[(((0,), (1,)), ((0,), (1,)))]["pi"]
     info["integrated"] = local_phi_r(phi_results)
+    info["emergence"] = info["synergy"] + info["causation"]
+    if also_static:
+        info["tc"] = local_total_correlation(data)
+        info["o"] = local_o_information(data, local_tc=info["tc"])
+        info["s"] = local_s_information(data)
+        tse = local_tse_complexity(data, num_samples=25)
+        where_inf = np.where(np.isinf(tse))[0]
+        tse[where_inf] = np.nan
+        info["tse"] = tse
     return info
+
 
 # 1) Cyclic networks: II oscillates with expression levels, but training disrupts dynamics. Two cases:
 #    a) II collapses to zero;
@@ -97,6 +124,12 @@ if __name__ == "__main__":
     arguments = parse_args()
     set_seed(arguments.seed)
     logger = logging.getLogger(__name__)
+    with open("final.txt", "w") as file:
+        header = ["model_id", "circuit_id"]
+        for m in MEASURES:
+            for p in ["relax", "stimulate", "test"]:
+                header.append(".".join([m, str(p)]))
+        file.write(";".join(header) + "\n")
 
     p = multiprocessing.Process(target=compute_grn_info, args=(arguments.seed, arguments.id))
     p.start()

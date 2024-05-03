@@ -33,11 +33,13 @@ def plot_trajectories(system_rollout, min_v, max_v, ax=None):
 
 def plot_info_measures(info, data, file_name):
     fig, axes = plt.subplots(figsize=(15, 10), nrows=len(info) + 1, ncols=1)
-    rows = {"synergy": 0, "causation": 1, "redundancy": 2, "integrated": 3, "tc": 0, "o": 1, "s": 2, "tse": 3}
-    titles = {"synergy": "pers. synergy",
-              "causation": "down. causality",
-              "redundancy": "pers. redundancy",
-              "integrated": "int. information",
+    rows = {"synergy": 0, "causation": 1, "redundancy": 2, "integrated": 3, "emergence": 4,
+            "tc": 0, "o": 1, "s": 2, "tse": 3}
+    titles = {"synergy": "synergy",
+              "causation": "causality",
+              "redundancy": "redundancy",
+              "integrated": "int. inf.",
+              "emergence": "emergence",
               "tc": "total corr.",
               "o": "o-inf.",
               "s": "s-inf.",
