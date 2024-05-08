@@ -56,7 +56,7 @@ class AssociativeLearning(object):
     def relax(self, y0=None, w0=None):
         return self.grn(key=self.random_key, y0=y0, w0=w0)[0]
 
-    def stimulate(self, y0, w0, stimulus, regulation):
+    def stimulate(self, y0, w0, stimulus, regulation, is_cs=False):
         if not isinstance(stimulus, list):
             stimulus = [stimulus]
         if not isinstance(regulation, list):

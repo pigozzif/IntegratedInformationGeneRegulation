@@ -1,6 +1,7 @@
 import logging
 import multiprocessing
 import os
+import pickle
 
 import numpy as np
 
@@ -40,9 +41,12 @@ def compute_info_for_r(al, response, model_id):
                 save_info_measures(info=info,
                                    model_id=model_id,
                                    circuit_id=idx)
+                save_trajectory(info=info,
+                                f=os.path.join("trajectories",
+                                               ".".join([str(model_id), str(response), str(idx), "pickle"])))
                 idx += 1
                 del processed_data, data, info
-                if idx >= 2:
+                if idx >= 3:
                     return
 
 
@@ -55,6 +59,10 @@ def save_info_measures(info, model_id, circuit_id):
                 measures.append(np.nanmean(info[measure][start: start + period]))
             start += period
         f.write(";".join([str(measure) for measure in measures]) + "\n")
+
+
+def save_trajectory(info, f):
+    pickle.dump(np.vstack([info["synergy"], info["causation"]]), open(f, "wb"))
 
 
 def train_associative(al, ucs_circuit, cs_circuit):
@@ -79,12 +87,6 @@ def compute_grn_info(seed, model_id):
     al.pretest()
     for r in al.mem_circuits.keys():
         compute_info_for_r(al, r, model_id)
-
-
-def moving_average(a, n=3):
-    ret = np.nancumsum(a, dtype=np.float64)
-    ret[n:] = ret[n:] - ret[:-n]
-    return ret[n - 1:] / n
 
 
 def compute_circuit_info(data, also_static=False):
