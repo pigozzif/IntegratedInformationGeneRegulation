@@ -11,5 +11,6 @@
 *.sh
 *.pickle
 *.zip
+*.npy
 data/*
 figures/*
