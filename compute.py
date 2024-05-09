@@ -1,7 +1,6 @@
 import logging
 import multiprocessing
 import os
-import pickle
 
 import numpy as np
 
@@ -62,7 +61,7 @@ def save_info_measures(info, model_id, circuit_id):
 
 
 def save_trajectory(info, f):
-    pickle.dump(np.vstack([info["synergy"], info["causation"]]), open(f, "wb"))
+    np.save(f, np.vstack([info["synergy"], info["causation"]]))
 
 
 def train_associative(al, ucs_circuit, cs_circuit):

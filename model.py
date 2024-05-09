@@ -1,9 +1,31 @@
+import dataclasses
+import pickle
+
+import numpy as np
 from addict import Dict
 import os
 import sbmltoodejax
 import jax.random as jrandom
 
-from utils import create_system_rollout_module
+from utils import create_system_rollout_module, rejection_sampling
+
+
+@dataclasses.dataclass
+class Parameters(object):
+    y0: list
+    w0: list
+    c: list
+
+    def __init__(self, y0=None, w0=None, c=None):
+        if c is None:
+            c = []
+        if w0 is None:
+            w0 = []
+        if y0 is None:
+            y0 = []
+        self.y0 = y0
+        self.w0 = w0
+        self.c = c
 
 
 class GeneRegulatoryNetwork(object):
@@ -27,17 +49,25 @@ class GeneRegulatoryNetwork(object):
         self.set_time(n_secs)
         # Get observed node ids
         self.observed_node_names = observed_node_names
+        self.params = Parameters()
 
     def __call__(self,
                  key,
                  y0=None,
                  w0=None,
+                 c=None,
                  intervention_fn=None,
                  intervention_params=None,
                  perturbation_fn=None,
                  perturbation_params=None):
         key, skey = jrandom.split(key)
-        system = create_system_rollout_module(self.config, y0, w0)
+        if y0 is None and self.params.y0:
+            y0 = np.array(self.params.y0)
+        if w0 is None and self.params.w0:
+            w0 = np.array(self.params.w0)
+        if c is None and self.params.c:
+            c = np.array(self.params.c)
+        system = create_system_rollout_module(self.config, y0=y0, w0=w0, c=c)
         return system(skey, intervention_fn, intervention_params, perturbation_fn, perturbation_params)
 
     def set_time(self, n_secs):
@@ -50,11 +80,11 @@ class GeneRegulatoryNetwork(object):
                 for name in self.observed_node_names] if self.observed_node_names is not None else []
 
     @classmethod
-    def create(cls, biomodel_idx, observed_node_names=None, **kwargs):
+    def create(cls, biomodel_idx, random=False, observed_node_names=None, **kwargs):
         out_model_sbml_filepath = f"data/biomodel_{biomodel_idx}.xml"
         out_model_jax_filepath = f"data/biomodel_{biomodel_idx}.py"
 
-        # Donwload the SBML file
+        # Download the SBML file
         if not os.path.exists(out_model_sbml_filepath):
             model_xml_body = sbmltoodejax.biomodels_api.get_content_for_model(biomodel_idx)
             with open(out_model_sbml_filepath, "w") as f:
@@ -65,6 +95,17 @@ class GeneRegulatoryNetwork(object):
             model_data = sbmltoodejax.parse.ParseSBMLFile(out_model_sbml_filepath)
             sbmltoodejax.modulegeneration.GenerateModel(model_data, out_model_jax_filepath)
 
-        return GeneRegulatoryNetwork(observed_node_names=observed_node_names,
-                                     model_filepath=out_model_jax_filepath,
-                                     **kwargs)
+        grn = GeneRegulatoryNetwork(observed_node_names=observed_node_names,
+                                    model_filepath=out_model_jax_filepath,
+                                    **kwargs)
+
+        if random:
+            params = pickle.load(open("params.pickle", "rb"))
+            y, w, c = np.histogram(params["y"], bins=50), np.histogram(params["w"], bins=25), \
+                      np.histogram(params["c"], bins=50)
+            system = create_system_rollout_module(grn.config)
+            y = rejection_sampling(y[0], y[1], n=len(system.y0))
+            w = rejection_sampling(w[0], w[1], n=len(system.w0))
+            c = rejection_sampling(c[0], c[1], n=len(system.c))
+            grn.params = Parameters(y0=y, w0=w, c=c)
+        return grn
