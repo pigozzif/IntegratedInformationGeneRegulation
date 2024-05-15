@@ -1,5 +1,3 @@
-import logging
-import multiprocessing
 import os
 
 import numpy as np
@@ -39,24 +37,22 @@ def compute_info_for_r(al, response, model_id):
                                                           ".".join([str(model_id), str(response), str(idx), "png"])))
                 save_info_measures(info=info,
                                    model_id=model_id,
+                                   response=response,
                                    circuit_id=idx)
                 save_trajectory(info=info,
                                 f=os.path.join("trajectories",
                                                ".".join([str(model_id), str(response), str(idx), "pickle"])))
                 idx += 1
                 del processed_data, data, info
-                if idx >= 3:
-                    return
 
 
-def save_info_measures(info, model_id, circuit_id):
+def save_info_measures(info, model_id, response, circuit_id):
     with open("final.txt", "a") as f:
-        measures = [str(model_id), str(circuit_id)]
-        start, period = 0, 250000
-        for _ in range(3):
+        measures = [model_id, response, circuit_id]
+        period = 250000
+        for start in range(period, period * 3 + 1, period):
             for measure in MEASURES:
-                measures.append(np.nanmean(info[measure][start: start + period]))
-            start += period
+                measures.append(np.nanmedian(info[measure][start: start + period]))
         f.write(";".join([str(measure) for measure in measures]) + "\n")
 
 
@@ -77,7 +73,6 @@ def train_associative(al, ucs_circuit, cs_circuit):
         is_mem = al.is_memory(e1, e2, ucs_circuit.response, up_down_r)
         train_data["is_mem"] = is_mem
         train_data["e2"] = e2
-        return train_data
     return train_data
 
 
@@ -114,31 +109,16 @@ def compute_circuit_info(data, also_static=False):
     return info
 
 
-# 1) Cyclic networks: II oscillates with expression levels, but training disrupts dynamics. Two cases:
-#    a) II collapses to zero;
-#    b) II spikes after training, then reverts to 0 (sleep)
-# 2) Other networks: II oscillates a little but after stimulation remains constant (sleep) != 0 or == 0
-# 3) Smaller networks -> more effect
-
-
 if __name__ == "__main__":
     arguments = parse_args()
     set_seed(arguments.seed)
-    logger = logging.getLogger(__name__)
     file_name = "final.txt"
     if not os.path.exists(file_name):
         with open(file_name, "w") as file:
-            header = ["model_id", "circuit_id"]
+            header = ["model_id", "response_id", "circuit_id"]
             for m in MEASURES:
                 for p in ["relax", "stimulate", "test"]:
                     header.append(".".join([m, str(p)]))
             file.write(";".join(header) + "\n")
 
-    p = multiprocessing.Process(target=compute_grn_info, args=(arguments.seed, arguments.id))
-    p.start()
-    p.join(arguments.timeout)
-
-    if p.is_alive():
-        logger.info("Terminated network {} due to time".format(arguments.id))
-        p.terminate()
-        p.join()
+    compute_grn_info(arguments.seed, arguments.id)

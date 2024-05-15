@@ -10,8 +10,6 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--id", type=int, default=27)
-    parser.add_argument("--outfile", type=str, default="info.txt")
-    parser.add_argument("--timeout", type=float, default=60 * 20)
     return parser.parse_args()
 
 
