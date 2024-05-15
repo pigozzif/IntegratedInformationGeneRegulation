@@ -12,7 +12,6 @@ def parse_args():
     parser.add_argument("--id", type=int, default=27)
     parser.add_argument("--outfile", type=str, default="info.txt")
     parser.add_argument("--timeout", type=float, default=60 * 20)
-    parser.add_argument("--np", type=int, default=7)
     return parser.parse_args()
 
 
