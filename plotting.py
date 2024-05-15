@@ -16,20 +16,6 @@ from umap import UMAP
 PHASES = ["relax", "train", "test"]
 
 
-def downsample_traj(traj, scaling_vector=np.ones((2,)), eps=0.05):
-    scaling_vector = scaling_vector[:, np.newaxis]
-    traj = traj / scaling_vector
-    traj_filt = [traj[:, i] for i in range(10)]
-    ids_filt = [i for i in range(10)]
-    for i, e in enumerate(traj.T):
-        if i >= 10 and (np.linalg.norm(e - traj_filt[-1], ord=2) > eps or i > len(traj.T) - 10):
-            traj_filt.append(e)
-            ids_filt.append(i)
-    traj_filt = np.array(traj_filt).T
-    ids_filt = np.array(ids_filt)
-    return traj_filt * scaling_vector, ids_filt
-
-
 def moving_average(a, w):
     return np.convolve(a, np.ones(w), "valid") / w
 
@@ -80,18 +66,24 @@ def load_info_data(reduced=None):
     files = [file for file in os.listdir("trajectories") if file.endswith("npy")]
     if reduced:
         files = list(filter(lambda x: int(x.split(".")[2]) < reduced, files))
-    ids = np.array([int(file.split(".")[0]) for file in files])
     for i, file in enumerate(files):
         d = np.load(os.path.join("trajectories", file))
         d = np.nansum(d, axis=0).reshape(1, -1)
         if data is None:
             data = np.zeros((len(files), d.shape[1]))
         data[i] = d
-    return data, ids
+    return data
+
+
+def load_data_ids(reduced=None):
+    files = [file for file in os.listdir("trajectories") if file.endswith("npy")]
+    if reduced:
+        files = list(filter(lambda x: int(x.split(".")[2]) < reduced, files))
+    return np.array([int(file.split(".")[0]) for file in files])
 
 
 def load_and_process_info_data(samples=100, reduced=None):
-    data, ids = load_info_data(reduced=reduced)
+    data = load_info_data(reduced=reduced)
     data = np.nan_to_num(data, copy=False)
     ma = np.zeros((data.shape[0], data.shape[1] - 99))
     for i, d in enumerate(data):
@@ -99,47 +91,45 @@ def load_and_process_info_data(samples=100, reduced=None):
     data = StandardScaler().fit_transform(np.nan_to_num(data, copy=False))
     data = np.nan_to_num(data, copy=False)
     data = data[:, ::samples]
-    return data, ids
+    return data
 
 
 def save_similarity_matrix(metric, samples=100, split=False, reduced=None):
-    data, ids = load_and_process_info_data(samples=samples, reduced=reduced)
+    data = load_and_process_info_data(samples=samples, reduced=reduced)
     if split:
-        data, _ = split_info_data(data=data)
+        data = split_info_data(data=data)
     sim_matrix = np.zeros((data.shape[0], data.shape[0]))
     print(sim_matrix.shape)
     for i, traj in enumerate(data):
         for j, other_traj in enumerate(data):
             if i != j:
-                sim_matrix[i, j] = metric(traj.flatten(), other_traj.flatten())
+                sim_matrix[i, j] = eval(metric + "(traj.flatten(), other_traj.flatten())")
             print(i, j)
-    np.save("{}.npy".format(metric if not split else "_".join([str(metric), "split"])), sim_matrix)
+    np.save("{}.npy".format(metric if not split else "_".join([metric, "split"])), sim_matrix)
 
 
 def split_info_data(data):
     n_steps = data.shape[1]
     split_data = np.zeros((data.shape[0] * 3, n_steps // 3))
-    ids = []
     for i, row in enumerate(data):
         i *= 3
         split_data[i] = row[:n_steps // 3]
         split_data[i + 1] = row[n_steps // 3: n_steps // 3 * 2]
         split_data[i + 2] = row[n_steps // 3 * 2:]
-        ids.extend([0, 1, 2])
-    return split_data, np.array(ids)
+    return split_data
 
 
 def dimensionality_reduction(metric=None, split=False, reduced=None):
     if metric is None:
-        data, ids = load_and_process_info_data(reduced=reduced)
+        data = load_and_process_info_data(reduced=reduced)
         if split:
-            data, ids = split_info_data(data=data)
+            data = split_info_data(data=data)
     else:
         data = np.load("{}.npy".format(metric if not split else "_".join([metric, "split"])))
-        if split:
-            ids = np.array([[0, 1, 2] for _ in range(len(data) // 3)]).flatten()
-        else:
-            ids = load_info_data()[1]
+    if split:
+        ids = np.array([[0, 1, 2] for _ in range(len(data) // 3)]).flatten()
+    else:
+        ids = load_data_ids(reduced=reduced)
     algorithms = {"PCA": KernelPCA(n_components=2, kernel="precomputed") if metric else PCA(n_components=2),
                   "UMAP": UMAP(n_components=2, metric="precomputed" if metric else "euclidean"),
                   "TSNE": TSNE(n_components=2, metric="precomputed" if metric else "euclidean", init="random"),
@@ -220,8 +210,8 @@ def filter_outliers(data):
 
 
 if __name__ == "__main__":
-    # save_similarity_matrix(metric=euclidean, split=True, reduced=False)
+    save_similarity_matrix(metric="dtw", split=True, reduced=None)
     # dimensionality_reduction(metric=None, split=False, reduced=10)
-    dimensionality_reduction(metric=None, split=True, reduced=4)
+    # dimensionality_reduction(metric=None, split=True, reduced=4)
     # plot_boxplots()
     # plot_boxplots_paired()
