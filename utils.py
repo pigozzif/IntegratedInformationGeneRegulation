@@ -49,7 +49,6 @@ def create_system_rollout_module(system_rollout_config, y0=None, w0=None, c=None
         t0 = getattr(module, "t0")
         system_rollout = GRNRollout(n_steps=system_rollout_config.n_system_steps, y0=y0, w0=w0, c=c, t0=t0,
                                     deltaT=system_rollout_config.deltaT, grn_step=grnstep)
-
     else:
         raise ValueError
     return system_rollout
