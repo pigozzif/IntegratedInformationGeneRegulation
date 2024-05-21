@@ -1,8 +1,8 @@
+import argparse
 import os
 
 import numpy as np
 import pandas as pd
-from numpy.linalg import det
 import matplotlib.pyplot as plt
 from scipy.spatial.distance import euclidean
 from scipy.stats import mannwhitneyu, gaussian_kde, wilcoxon
@@ -94,18 +94,20 @@ def load_and_process_info_data(samples=100, reduced=None):
     return data
 
 
-def save_similarity_matrix(metric, samples=100, split=False, reduced=None):
+def save_similarity_matrix(metric, seed, samples=100, split=False, reduced=None):
     data = load_and_process_info_data(samples=samples, reduced=reduced)
     if split:
         data = split_info_data(data=data)
+    n_batch = data.shape[0] / 2
+    start, end = seed * n_batch, (seed + 1) * n_batch
     sim_matrix = np.zeros((data.shape[0], data.shape[0]))
     print(sim_matrix.shape)
     for i, traj in enumerate(data):
         for j, other_traj in enumerate(data):
-            if i != j:
+            if i != j and start <= i < end:
                 sim_matrix[i, j] = eval(metric + "(traj.flatten(), other_traj.flatten())")
             print(i, j)
-    np.save("{}.npy".format(metric if not split else "_".join([metric, "split"])), sim_matrix)
+    np.save("{}.npy".format(metric if not split else "_".join([metric, "split", str(seed)])), sim_matrix)
 
 
 def split_info_data(data):
@@ -119,7 +121,7 @@ def split_info_data(data):
     return split_data
 
 
-def dimensionality_reduction(metric=None, split=False, reduced=None):
+def dimensionality_reduction(seed, metric=None, split=False, reduced=None):
     if metric is None:
         data = load_and_process_info_data(reduced=reduced)
         if split:
@@ -130,10 +132,18 @@ def dimensionality_reduction(metric=None, split=False, reduced=None):
         ids = np.array([[0, 1, 2] for _ in range(len(data) // 3)]).flatten()
     else:
         ids = load_data_ids(reduced=reduced)
-    algorithms = {"PCA": KernelPCA(n_components=2, kernel="precomputed") if metric else PCA(n_components=2),
-                  "UMAP": UMAP(n_components=2, metric="precomputed" if metric else "euclidean"),
-                  "TSNE": TSNE(n_components=2, metric="precomputed" if metric else "euclidean", init="random"),
-                  "ISOMAP": Isomap(n_components=2, metric="precomputed" if metric else "euclidean")}
+    algorithms = {"PCA": KernelPCA(random_state=seed,
+                                   n_components=2,
+                                   kernel="precomputed") if metric else PCA(random_state=seed, n_components=2),
+                  "UMAP": UMAP(random_state=seed,
+                               n_components=2,
+                               metric="precomputed" if metric else "euclidean"),
+                  "TSNE": TSNE(random_state=seed,
+                               n_components=2,
+                               metric="precomputed" if metric else "euclidean",
+                               init="random"),
+                  "ISOMAP": Isomap(n_components=2,
+                                   metric="precomputed" if metric else "euclidean")}
     fig, axes = plt.subplots(figsize=(30, 15), nrows=2, ncols=len(algorithms))
     n_bins = 20
     for ax, (name, algorithm) in enumerate(algorithms.items()):
@@ -209,9 +219,16 @@ def filter_outliers(data):
     return data[(q25 - iqr_threshold <= data) & (data <= q75 + iqr_threshold)]
 
 
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seed", type=int, default=2)
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    save_similarity_matrix(metric="dtw", split=True, reduced=None)
-    # dimensionality_reduction(metric=None, split=False, reduced=10)
-    # dimensionality_reduction(metric=None, split=True, reduced=4)
+    args = parse_args()
+    # save_similarity_matrix(metric="dtw", seed=args.seed, split=True, reduced=None)
+    # dimensionality_reduction(seed=args.seed, metric=None, split=False, reduced=10)
+    dimensionality_reduction(seed=args.seed, metric="dtw", split=True, reduced=None)
     # plot_boxplots()
     # plot_boxplots_paired()
