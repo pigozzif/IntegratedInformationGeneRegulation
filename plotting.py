@@ -10,6 +10,7 @@ from sklearn.decomposition import PCA, KernelPCA
 from sklearn.manifold import TSNE, Isomap
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score
+from tslearn.clustering import TimeSeriesKMeans
 from tslearn.metrics import dtw
 from umap import UMAP
 
@@ -112,12 +113,12 @@ def save_similarity_matrix(metric, seed, samples=100, split=False, reduced=None)
 
 def split_info_data(data):
     n_steps = data.shape[1]
-    split_data = np.zeros((data.shape[0] * 3, n_steps // 3))
+    split_data = np.zeros((data.shape[0] * 3, int(np.ceil(n_steps / 3))))
     for i, row in enumerate(data):
         i *= 3
-        split_data[i] = row[:n_steps // 3]
-        split_data[i + 1] = row[n_steps // 3: n_steps // 3 * 2]
-        split_data[i + 2] = row[n_steps // 3 * 2:]
+        split_data[i] = row[: int(np.ceil(n_steps / 3))]
+        split_data[i + 1] = row[int(np.ceil(n_steps / 3)): int(np.ceil(n_steps / 3)) * 2]
+        split_data[i + 2] = row[int(np.floor(n_steps / 3)) * 2:]
     return split_data
 
 
@@ -219,9 +220,29 @@ def filter_outliers(data):
     return data[(q25 - iqr_threshold <= data) & (data <= q75 + iqr_threshold)]
 
 
+def kmeans_clustering(seed, metric, reduced=None):
+    data = load_and_process_info_data(reduced=reduced)
+    data = split_info_data(data=data)
+    data = data[2::3]
+    best_clustering, best_score = None, -1
+    for n_cluster in range(2, 20):
+        kmeans = TimeSeriesKMeans(n_clusters=n_cluster, metric=metric, max_iter=10, random_state=seed, n_jobs=-1)
+        kmeans.fit(data)
+        score = silhouette_score(data, kmeans.labels_)
+        print(n_cluster, score)
+        if best_score <= score:
+            best_score = score
+            best_clustering = kmeans
+    for i, cluster in enumerate(best_clustering.cluster_centers_):
+        plt.plot([i * 100 for i in range(len(cluster))], cluster.ravel(), label=str(i))
+    plt.xlabel("time steps", fontsize=15)
+    plt.ylabel("emergence [nat]", fontsize=15)
+    plt.savefig("figures/{}.png".format("_".join(["clusters", metric])))
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--seed", type=int, default=2)
+    parser.add_argument("--seed", type=int, default=0)
     return parser.parse_args()
 
 
@@ -229,6 +250,7 @@ if __name__ == "__main__":
     args = parse_args()
     # save_similarity_matrix(metric="dtw", seed=args.seed, split=True, reduced=None)
     # dimensionality_reduction(seed=args.seed, metric=None, split=False, reduced=10)
-    dimensionality_reduction(seed=args.seed, metric="dtw", split=True, reduced=None)
+    # dimensionality_reduction(seed=args.seed, metric="dtw", split=True, reduced=None)
     # plot_boxplots()
     # plot_boxplots_paired()
+    kmeans_clustering(seed=args.seed, metric="euclidean", reduced=5)
