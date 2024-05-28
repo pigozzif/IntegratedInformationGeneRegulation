@@ -1,9 +1,6 @@
-import dataclasses
-import logging
-import multiprocessing
+from dataclasses import dataclass
 from enum import IntEnum
 
-import numpy as np
 import jax.numpy as jnp
 from autodiscjax import DictTree
 from autodiscjax.modules import grnwrappers
@@ -20,7 +17,7 @@ class Regulation(IntEnum):
     DOWN = 2
 
 
-@dataclasses.dataclass
+@dataclass
 class MemoryCircuit(object):
     stimulus: int
     response: int
@@ -56,7 +53,7 @@ class AssociativeLearning(object):
     def relax(self, y0=None, w0=None):
         return self.grn(key=self.random_key, y0=y0, w0=w0)[0]
 
-    def stimulate(self, y0, w0, stimulus, regulation, is_cs=False):
+    def stimulate(self, y0, w0, stimulus, regulation):
         if not isinstance(stimulus, list):
             stimulus = [stimulus]
         if not isinstance(regulation, list):
@@ -144,7 +141,7 @@ class AssociativeLearning(object):
                 break
             e1 = self.stimulate(self.genes_ss, self.w_ss, [ucs_circuit.stimulus, cs_circuit.stimulus],
                                 [ucs_circuit.stimulus_reg, cs_circuit.stimulus_reg])
-            up_down_r = self.is_r_regulated(e1, cs_circuit)
+            up_down_r = self.is_r_regulated(e1, cs_circuit.response)
             if int(up_down_r) != 0:
                 e2 = self.relax(y0=e1.ys[:, -1], w0=e1.ws[:, -1])
                 is_mem = self.is_memory(e1, e2, ucs_circuit.response, up_down_r)
@@ -160,9 +157,12 @@ class AssociativeLearning(object):
             elif is_mem:
                 break
             e1 = self.stimulate(self.genes_ss, self.w_ss, ucs_circuit.stimulus, ucs_circuit.stimulus_reg)
-            e2 = self.stimulate(e1.ys[:, -1], e1.ws[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
-            is_mem = self.is_memory(e1, e2, ucs_circuit.response, ucs_circuit.response_reg)
-            del e1, e2
+            up_down_r = self.is_r_regulated(e1, cs_circuit.response)
+            if int(up_down_r) != 0:
+                e2 = self.stimulate(e1.ys[:, -1], e1.ws[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
+                is_mem = self.is_memory(e1, e2, ucs_circuit.response, up_down_r)
+                del e2
+            del e1
         return is_mem
 
     def is_associative_memory(self, ucs_circuit, cs_list):
@@ -174,7 +174,7 @@ class AssociativeLearning(object):
                 break
             e1 = self.stimulate(self.genes_ss, self.w_ss, [ucs_circuit.stimulus, cs_circuit.stimulus],
                                 [ucs_circuit.stimulus_reg, cs_circuit.stimulus_reg])
-            up_down_r = self.is_r_regulated(e1, cs_circuit)
+            up_down_r = self.is_r_regulated(e1, cs_circuit.response)
             if int(up_down_r) != 0:
                 e2 = self.stimulate(e1.ys[:, -1], e1.ws[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
                 is_mem = self.is_memory(e1, e2, ucs_circuit.response, up_down_r)
@@ -191,7 +191,7 @@ class AssociativeLearning(object):
                 break
             e1 = self.stimulate(self.genes_ss, self.w_ss, [ucs_circuit.stimulus, cs_circuit.stimulus],
                                 [ucs_circuit.stimulus_reg, cs_circuit.stimulus_reg])
-            up_down_r = self.is_r_regulated(e1, cs_circuit)
+            up_down_r = self.is_r_regulated(e1, cs_circuit.response)
             if int(up_down_r) != 0:
                 e2 = self.stimulate(e1.ys[:, -1], e1.ws[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
                 e3 = self.stimulate(e2.ys[:, -1], e2.ws[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
@@ -200,8 +200,7 @@ class AssociativeLearning(object):
             del e1
         return is_mem
 
-    def is_r_regulated(self, e1, cs_circuit):
-        response = cs_circuit.response
+    def is_r_regulated(self, e1, response):
         mean_e1 = np.mean(e1.ys[response, :])
         if mean_e1 >= self.r_scale_up * np.mean(self.relax_y[response, :]) \
                 and mean_e1 >= self.r_scale_up * np.mean(
@@ -221,7 +220,7 @@ class AssociativeLearning(object):
                 np.mean(self.relax_y[response, :]) - np.mean(e1.ys[response, :])) / 2.0
 
 
-def learn(seed, i, file_name):
+def learn(seed, i, file_name="memories.txt"):
     al = AssociativeLearning(seed=seed, model_id=i)
     al.pretest()
     memories = [[] for _ in MEMORIES[:-1]]
@@ -251,17 +250,9 @@ if __name__ == "__main__":
     # 26, 27, 29, 31
     arguments = parse_args()
     set_seed(arguments.seed)
-    logger = logging.getLogger(__name__)
 
-    if not os.path.exists(arguments.outfile):
-        with open(arguments.outfile, "w") as f:
-            f.write(";".join(["id"] + [mem.lower() for mem in MEMORIES]) + "\n")
+    # if not os.path.exists(arguments.outfile):
+    #     with open(arguments.outfile, "w") as f:
+    #         f.write(";".join(["id"] + [mem.lower() for mem in MEMORIES]) + "\n")
 
-    p = multiprocessing.Process(target=learn, args=(arguments.seed, arguments.id, arguments.outfile))
-    p.start()
-    p.join(arguments.timeout)
-
-    if p.is_alive():
-        logger.info("Terminated network {} due to time".format(arguments.id))
-        p.terminate()
-        p.join()
+    learn(arguments.seed, arguments.id)
