@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import os
 
 import numpy as np
@@ -11,7 +12,15 @@ from utils import parse_args, set_seed
 
 MEASURES = ["synergy", "causation", "redundancy", "integrated", "emergence"]
 
-# TODO: create object with, among the others, random attribute
+
+@dataclass
+class ExperimentData(object):
+    seed: int
+    model_id: int
+    random: bool
+    info_file: str
+    trajectories_dir: str
+    plots_dir: str
 
 
 def preprocess_data(data):
@@ -21,7 +30,7 @@ def preprocess_data(data):
     return data
 
 
-def compute_info_for_r(al, seed, response, model_id):
+def compute_info_for_r(al, exp_data, response):
     if not al.mem_circuits[response]:
         return
     cs_list = [circuit for circuit in al.mem_circuits[response] if not circuit.is_ucs]
@@ -33,25 +42,33 @@ def compute_info_for_r(al, seed, response, model_id):
                 data = np.hstack([al.relax_y, train_data["e1"].ys, train_data["e2"].ys])
                 processed_data = preprocess_data(data)
                 info = compute_circuit_info(data=processed_data)
-                # plot_info_measures(info=info,
-                #                    data=data,
-                #                    file_name=os.path.join("plots_random",
-                #                                           ".".join([str(model_id), str(response), str(idx), "png"])))
+                if not exp_data.random:
+                    plot_info_measures(info=info,
+                                       data=data,
+                                       file_name=os.path.join(exp_data.plots_dir,
+                                                              ".".join(
+                                                                  [str(exp_data.model_id),
+                                                                   str(response),
+                                                                   str(idx),
+                                                                   "png"])))
                 save_info_measures(info=info,
-                                   seed=seed,
-                                   model_id=model_id,
+                                   exp_data=exp_data,
                                    response=response,
                                    circuit_id=idx)
                 save_trajectory(info=info,
-                                f=os.path.join("trajectories_random",
-                                               ".".join([str(model_id), str(response), str(idx), str(seed), "npy"])))
+                                f=os.path.join(exp_data.trajectories_dir,
+                                               ".".join([str(exp_data.model_id),
+                                                         str(response),
+                                                         str(idx),
+                                                         str(exp_data.seed),
+                                                         "npy"])))
                 idx += 1
                 del processed_data, data, info
 
 
-def save_info_measures(info, seed, model_id, response, circuit_id):
+def save_info_measures(info, exp_data, response, circuit_id):
     with open("final_random.txt", "a") as f:
-        measures = [seed, model_id, response, circuit_id]
+        measures = [exp_data.seed, exp_data.model_id, response, circuit_id]
         period = 250000
         for start in range(period, period * 3 + 1, period):
             for measure in MEASURES:
@@ -79,11 +96,13 @@ def train_associative(al, ucs_circuit, cs_circuit):
     return train_data
 
 
-def compute_grn_info(seed, model_id, random):
-    al = AssociativeLearning(seed=seed, model_id=model_id, random=random)
+def compute_grn_info(exp_data):
+    al = AssociativeLearning(seed=exp_data.seed,
+                             model_id=exp_data.model_id,
+                             random=exp_data.random)
     al.pretest()
     for r in al.mem_circuits.keys():
-        compute_info_for_r(al, seed, r, model_id)
+        compute_info_for_r(al, exp_data, r)
 
 
 def compute_circuit_info(data, also_static=False):
@@ -115,13 +134,19 @@ def compute_circuit_info(data, also_static=False):
 if __name__ == "__main__":
     arguments = parse_args()
     set_seed(arguments.seed)
-    file_name = "final.txt" if not arguments.random else "final_random.txt"
-    if not os.path.exists(file_name):
-        with open(file_name, "w") as file:
+    experiment_data = ExperimentData(seed=arguments.seed,
+                                     model_id=arguments.id,
+                                     random=arguments.random,
+                                     info_file="final.txt" if not arguments.random else "final_random.txt",
+                                     trajectories_dir="trajectories" if not arguments.random else "trajectories_random",
+                                     plots_dir="plots_final" if not arguments.random else "plots_random")
+
+    if not os.path.exists(experiment_data.info_file):
+        with open(experiment_data.info_file, "w") as file:
             header = ["seed", "model_id", "response_id", "circuit_id"]
             for m in MEASURES:
                 for p in ["relax", "stimulate", "test"]:
                     header.append(".".join([m, str(p)]))
             file.write(";".join(header) + "\n")
 
-    compute_grn_info(arguments.seed, arguments.id, arguments.random)
+    compute_grn_info(exp_data=experiment_data)
