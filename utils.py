@@ -10,6 +10,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--id", type=int, default=27)
+    parser.add_argument("--random", type=bool, default=False)
     return parser.parse_args()
 
 

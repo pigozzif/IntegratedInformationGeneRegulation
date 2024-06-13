@@ -11,6 +11,8 @@ from utils import parse_args, set_seed
 
 MEASURES = ["synergy", "causation", "redundancy", "integrated", "emergence"]
 
+# TODO: create object with, among the others, random attribute
+
 
 def preprocess_data(data):
     data = corrected_zscore(data, axis=1)
@@ -19,7 +21,7 @@ def preprocess_data(data):
     return data
 
 
-def compute_info_for_r(al, response, model_id):
+def compute_info_for_r(al, seed, response, model_id):
     if not al.mem_circuits[response]:
         return
     cs_list = [circuit for circuit in al.mem_circuits[response] if not circuit.is_ucs]
@@ -31,24 +33,25 @@ def compute_info_for_r(al, response, model_id):
                 data = np.hstack([al.relax_y, train_data["e1"].ys, train_data["e2"].ys])
                 processed_data = preprocess_data(data)
                 info = compute_circuit_info(data=processed_data)
-                plot_info_measures(info=info,
-                                   data=data,
-                                   file_name=os.path.join("plots_final",
-                                                          ".".join([str(model_id), str(response), str(idx), "png"])))
+                # plot_info_measures(info=info,
+                #                    data=data,
+                #                    file_name=os.path.join("plots_random",
+                #                                           ".".join([str(model_id), str(response), str(idx), "png"])))
                 save_info_measures(info=info,
+                                   seed=seed,
                                    model_id=model_id,
                                    response=response,
                                    circuit_id=idx)
                 save_trajectory(info=info,
-                                f=os.path.join("trajectories",
-                                               ".".join([str(model_id), str(response), str(idx), "pickle"])))
+                                f=os.path.join("trajectories_random",
+                                               ".".join([str(model_id), str(response), str(idx), str(seed), "npy"])))
                 idx += 1
                 del processed_data, data, info
 
 
-def save_info_measures(info, model_id, response, circuit_id):
-    with open("final.txt", "a") as f:
-        measures = [model_id, response, circuit_id]
+def save_info_measures(info, seed, model_id, response, circuit_id):
+    with open("final_random.txt", "a") as f:
+        measures = [seed, model_id, response, circuit_id]
         period = 250000
         for start in range(period, period * 3 + 1, period):
             for measure in MEASURES:
@@ -67,7 +70,7 @@ def train_associative(al, ucs_circuit, cs_circuit):
     e1 = al.stimulate(al.genes_ss, al.w_ss, [ucs_circuit.stimulus, cs_circuit.stimulus],
                       [ucs_circuit.stimulus_reg, cs_circuit.stimulus_reg])
     train_data["e1"] = e1
-    up_down_r = al.is_r_regulated(e1, cs_circuit)
+    up_down_r = al.is_r_regulated(e1, cs_circuit.response)
     if int(up_down_r) != 0:
         e2 = al.stimulate(e1.ys[:, -1], e1.ws[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
         is_mem = al.is_memory(e1, e2, ucs_circuit.response, up_down_r)
@@ -76,11 +79,11 @@ def train_associative(al, ucs_circuit, cs_circuit):
     return train_data
 
 
-def compute_grn_info(seed, model_id):
-    al = AssociativeLearning(seed=seed, model_id=model_id)
+def compute_grn_info(seed, model_id, random):
+    al = AssociativeLearning(seed=seed, model_id=model_id, random=random)
     al.pretest()
     for r in al.mem_circuits.keys():
-        compute_info_for_r(al, r, model_id)
+        compute_info_for_r(al, seed, r, model_id)
 
 
 def compute_circuit_info(data, also_static=False):
@@ -112,13 +115,13 @@ def compute_circuit_info(data, also_static=False):
 if __name__ == "__main__":
     arguments = parse_args()
     set_seed(arguments.seed)
-    file_name = "final.txt"
+    file_name = "final.txt" if not arguments.random else "final_random.txt"
     if not os.path.exists(file_name):
         with open(file_name, "w") as file:
-            header = ["model_id", "response_id", "circuit_id"]
+            header = ["seed", "model_id", "response_id", "circuit_id"]
             for m in MEASURES:
                 for p in ["relax", "stimulate", "test"]:
                     header.append(".".join([m, str(p)]))
             file.write(";".join(header) + "\n")
 
-    compute_grn_info(arguments.seed, arguments.id)
+    compute_grn_info(arguments.seed, arguments.id, arguments.random)

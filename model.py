@@ -1,5 +1,4 @@
 import dataclasses
-import pickle
 
 import numpy as np
 from addict import Dict
@@ -7,7 +6,7 @@ import os
 import sbmltoodejax
 import jax.random as jrandom
 
-from utils import create_system_rollout_module, rejection_sampling
+from utils import create_system_rollout_module
 
 
 @dataclasses.dataclass
@@ -100,12 +99,9 @@ class GeneRegulatoryNetwork(object):
                                     **kwargs)
 
         if random:
-            params = pickle.load(open("params.pickle", "rb"))
-            y, w, c = np.histogram(params["y"], bins=50), np.histogram(params["w"], bins=25), \
-                      np.histogram(params["c"], bins=50)
             system = create_system_rollout_module(grn.config)
-            y = rejection_sampling(y[0], y[1], n=len(system.y0))
-            w = rejection_sampling(w[0], w[1], n=len(system.w0))
-            c = rejection_sampling(c[0], c[1], n=len(system.c))
+            y = list(np.random.uniform(low=0.0, high=1.0, size=len(system.y0)))
+            w = list(np.random.uniform(low=0.0, high=1.0, size=len(system.w0)))
+            c = list(np.random.uniform(low=0.0, high=1.0, size=len(system.c)))
             grn.params = Parameters(y0=y, w0=w, c=c)
         return grn
