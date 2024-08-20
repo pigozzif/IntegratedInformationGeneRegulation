@@ -55,7 +55,7 @@ def _detect_peaks(y):
 
 def peaks_distance(y):
     peaks = _detect_peaks(y=y)
-    if not peaks:
+    if not len(peaks):
         return -1.0
     dm = distance_matrix(x=peaks.reshape(-1, 1), y=peaks.reshape(-1, 1), p=1)
     return np.mean(dm.ravel())
