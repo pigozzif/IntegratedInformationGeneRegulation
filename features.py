@@ -2,6 +2,8 @@ import os
 
 import numpy as np
 from matplotlib import pyplot as plt
+from scipy.signal import find_peaks
+from scipy.spatial import distance_matrix
 from scipy.special import entr
 from scipy.stats import kendalltau, linregress
 
@@ -40,36 +42,54 @@ def gini(y):
     return (np.sum((2 * index - n_samples - 1) * y)) / (n_samples * np.sum(y))
 
 
+def _detect_peaks(y):
+    peaks = []
+    window_size = y.shape[1]
+    threshold = y.max() - abs(y.max() - y.min()) * 0.5
+    for i in range(y.shape[1] - window_size + 1):
+        window = y[:, i: i + window_size]
+        peak_indices, _ = find_peaks(window.ravel(), height=threshold)
+        peaks.extend(peak_indices + i)
+    return np.array(peaks)
+
+
+def peaks_distance(y):
+    peaks = _detect_peaks(y=y)
+    if not peaks:
+        return -1.0
+    dm = distance_matrix(x=peaks.reshape(-1, 1), y=peaks.reshape(-1, 1), p=1)
+    return np.mean(dm.ravel())
+
+
 if __name__ == "__main__":
-    n = 1000
-    for traj in [np.ones(n),
-                 np.zeros(n),
-                 np.arange(n) / n,
-                 np.arange(n)[::-1] / n,
-                 np.random.random(n),
-                 np.where(np.arange(n) < n // 2, 0.0, 1.0),
-                 np.sin(np.arange(n)),
-                 np.where(np.arange(n) == n // 2, 1.0, 0.0)]:
-        plt.plot(traj)
-        traj = traj.reshape(1, -1)
-        print(trend(traj), " ", monotonicity(traj), " ", flatness(traj), " ", gini(traj))
-    plt.savefig("tests.png")
-    plt.close()
-    exit()
     with open("features.txt", "w") as file:
-        file.write(";".join(["model_id", "response_id", "circuit_id", "std", "trend", "flatness"]))
+        file.write(";".join(["model_id",
+                             "response_id",
+                             "circuit_id",
+                             "phase",
+                             "std",
+                             "trend",
+                             "monotonicity",
+                             "flatness",
+                             "gini",
+                             "peaks.distance"]))
         for f in os.listdir("trajectories"):
             if not f.endswith("npy"):
                 continue
             traj = process_info_data(np.nansum(np.load(os.path.join("trajectories", f)), axis=0).reshape(1, -1),
                                      normalize=False)
-            print(f)
-            print(trend(traj))
-            print(flatness(traj))
-            exit()
-            # file.write(";".join([f.split(".")[0],
-            #                      f.split(".")[1],
-            #                      f.split(".")[2],
-            #                      str(variance(y=traj)),
-            #                      str(trend(y=traj)),
-            #                      str(flatness(y=traj))]))
+            if traj.shape[1] != 7500:
+                continue
+            phase_length = 2500
+            for p, (start, stop) in zip(["relax", "train", "test", "entire"],
+                                        [(0, 1), (1, 2), (2, 3), (0, 3)]):
+                file.write(";".join([f.split(".")[0],
+                                     f.split(".")[1],
+                                     f.split(".")[2],
+                                     p,
+                                     str(variance(y=traj)),
+                                     str(trend(y=traj)),
+                                     str(monotonicity(y=traj)),
+                                     str(flatness(y=traj)),
+                                     str(gini(y=traj)),
+                                     str(peaks_distance(y=traj))]))
