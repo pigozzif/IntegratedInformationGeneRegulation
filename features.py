@@ -1,10 +1,8 @@
+import math
 import os
 
 import numpy as np
-from matplotlib import pyplot as plt
-from scipy.signal import find_peaks
 from scipy.spatial import distance_matrix
-from scipy.special import entr
 from scipy.stats import kendalltau, linregress
 
 from plotting import process_info_data
@@ -42,19 +40,41 @@ def gini(y):
     return (np.sum((2 * index - n_samples - 1) * y)) / (n_samples * np.sum(y))
 
 
-def _detect_peaks(y):
+def _surrogate_f(x, table):
+    print(x)
+    a = table[0, math.floor(x)]
+    b = table[0, math.ceil(x)]
+    dec = x % 1
+    return - (a + (b - a) * dec)
+
+
+def _minimize(x, table):
+    while True:
+        m1, m2 = table[max(0, x - 1)], table[min(len(table) - 1, x + 1)]
+        if m1 > table[x] and m1 > m2:
+            x -= 1
+        elif m2 > table[x]:
+            x += 1
+        else:
+            return x
+
+
+def _detect_peaks(y, n=1, window_size=10, alpha=1):
     peaks = []
-    window_size = y.shape[1]
-    threshold = y.max() - abs(y.max() - y.min()) * 0.5
-    for i in range(y.shape[1] - window_size + 1):
-        window = y[:, i: i + window_size]
-        peak_indices, _ = find_peaks(window.ravel(), height=threshold)
-        peaks.extend(peak_indices + i)
-    return np.array(peaks)
+    n_points = y.shape[1]
+    for i in range(0, n_points, n):
+        res = _minimize(x=i, table=y[0])
+        peaks.append(int(res))
+    peaks = np.unique(peaks)
+    return np.array([p for p in peaks
+                     if y[:, p] > alpha * np.mean(y[:, max(0, p - window_size): min(n_points, p + window_size)])])
 
 
-def peaks_distance(y):
-    peaks = _detect_peaks(y=y)
+def peaks_number(peaks):
+    return len(peaks)
+
+
+def peaks_distance(peaks):
     if not len(peaks):
         return -1.0
     dm = distance_matrix(x=peaks.reshape(-1, 1), y=peaks.reshape(-1, 1), p=1)
@@ -72,24 +92,29 @@ if __name__ == "__main__":
                              "monotonicity",
                              "flatness",
                              "gini",
-                             "peaks.distance"]))
+                             "peaks.number",
+                             "peaks.distance"]) + "\n")
         for f in os.listdir("trajectories"):
             if not f.endswith("npy"):
                 continue
-            traj = process_info_data(np.nansum(np.load(os.path.join("trajectories", f)), axis=0).reshape(1, -1),
-                                     normalize=False)
+            print(f)
+            phase_length = 2500
+            data = np.nansum(np.load(os.path.join("trajectories", f)), axis=0)
+            traj = process_info_data(data.reshape(1, -1), normalize=False)
             if traj.shape[1] != 7500:
                 continue
-            phase_length = 2500
             for p, (start, stop) in zip(["relax", "train", "test", "entire"],
                                         [(0, 1), (1, 2), (2, 3), (0, 3)]):
+                y = traj[:, start * phase_length: stop * phase_length].reshape(1, -1)
+                peaks = _detect_peaks(y=y)
                 file.write(";".join([f.split(".")[0],
                                      f.split(".")[1],
                                      f.split(".")[2],
                                      p,
-                                     str(variance(y=traj)),
-                                     str(trend(y=traj)),
-                                     str(monotonicity(y=traj)),
-                                     str(flatness(y=traj)),
-                                     str(gini(y=traj)),
-                                     str(peaks_distance(y=traj))]))
+                                     str(variance(y=y)),
+                                     str(trend(y=y)),
+                                     str(monotonicity(y=y)),
+                                     str(flatness(y=y)),
+                                     str(gini(y=y)),
+                                     str(peaks_number(peaks=peaks)),
+                                     str(peaks_distance(peaks=peaks))]) + "\n")
