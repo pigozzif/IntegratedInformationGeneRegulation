@@ -59,15 +59,14 @@ def _minimize(x, table):
             return x
 
 
-def _detect_peaks(y, n=1, window_size=10, alpha=1):
+def _detect_peaks(y, n=1, window_size=250, alpha=1):
     peaks = []
     n_points = y.shape[1]
     for i in range(0, n_points, n):
         res = _minimize(x=i, table=y[0])
-        peaks.append(int(res))
-    peaks = np.unique(peaks)
-    return np.array([p for p in peaks
-                     if y[:, p] > alpha * np.mean(y[:, max(0, p - window_size): min(n_points, p + window_size)])])
+        if y[:, res] > alpha * np.mean(y[:, max(0, res - window_size): min(n_points, res + window_size)]):
+            peaks.append(res)
+    return np.unique(peaks)
 
 
 def peaks_number(peaks):
