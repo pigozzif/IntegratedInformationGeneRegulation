@@ -5,7 +5,9 @@ import numpy as np
 from scipy.spatial import distance_matrix
 from scipy.stats import kendalltau, linregress
 
-from plotting import process_info_data
+
+from information import corrected_zscore
+from plotting import process_info_data, moving_average
 
 
 def variance(y):
@@ -29,10 +31,13 @@ def flatness(y, n=100):
     return max(1.0 - ss_res / (ss_tot + 1e-10), 0.0)
 
 
-def gini(y):
+def gini(y, inverted=False):
+    if inverted:
+        y = -y
     y = y.flatten()
-    if np.amin(y) < 0:
-        y -= np.amin(y)
+    amin = np.amin(y)
+    if amin < 0:
+        y += np.abs(amin)
     y += 0.0000001
     y = np.sort(y)
     index = np.arange(1, y.shape[0] + 1)
@@ -48,24 +53,30 @@ def _surrogate_f(x, table):
     return - (a + (b - a) * dec)
 
 
-def _minimize(x, table):
+def _optimize(x, table, maximize):
     while True:
         m1, m2 = table[max(0, x - 1)], table[min(len(table) - 1, x + 1)]
-        if m1 > table[x] and m1 > m2:
+        if (maximize and m1 > table[x] and m1 > m2) or (not maximize and m1 < table[x] and m1 < m2):
             x -= 1
-        elif m2 > table[x]:
+        elif (maximize and m2 > table[x]) or (not maximize and m2 < table[x]):
             x += 1
         else:
             return x
 
 
-def _detect_peaks(y, n=1, window_size=250, alpha=1):
-    peaks = []
+def _detect_peaks(y, maximize, n=1, window_size=100):
+    peaks = list()
     n_points = y.shape[1]
     for i in range(0, n_points, n):
-        res = _minimize(x=i, table=y[0])
-        if y[:, res] > alpha * np.mean(y[:, max(0, res - window_size): min(n_points, res + window_size)]):
+        res = _optimize(x=i, table=y[0], maximize=maximize)
+        window = y[0, max(0, res - window_size): min(y.shape[1] - 1, res + window_size)]
+        if maximize and y[:, res] >= np.max(window) and y[:, res] > 1 * np.mean(window):
             peaks.append(res)
+        elif not maximize and y[:, res] <= np.min(window) and y[:, res] < 1 * np.mean(window):
+            peaks.append(res)
+    if not peaks:
+        return peaks
+    peaks = [np.amin(subset) for subset in np.split(peaks, np.where(np.diff(peaks) >= 5)[0] + 1)]
     return np.unique(peaks)
 
 
@@ -75,12 +86,14 @@ def peaks_number(peaks):
 
 def peaks_distance(peaks):
     if not len(peaks):
-        return -1.0
+        return 0.0, 0.0
     dm = distance_matrix(x=peaks.reshape(-1, 1), y=peaks.reshape(-1, 1), p=1)
-    return np.mean(dm.ravel())
+    distances = dm[np.triu_indices(len(peaks), k=1)].ravel()
+    return np.mean(distances), np.std(distances)
 
 
 if __name__ == "__main__":
+    directory = "trajectories"
     with open("features.txt", "w") as file:
         file.write(";".join(["model_id",
                              "response_id",
@@ -91,29 +104,69 @@ if __name__ == "__main__":
                              "monotonicity",
                              "flatness",
                              "gini",
-                             "peaks.number",
-                             "peaks.distance"]) + "\n")
-        for f in os.listdir("trajectories"):
+                             "max.peaks.number",
+                             "max.peaks.distance.mean",
+                             "max.peaks.distance.std",
+                             "min.peaks.number",
+                             "min.peaks.distance.mean",
+                             "min.peaks.distance.std",
+                             "all.peaks.number",
+                             "all.peaks.distance.mean",
+                             "all.peaks.distance.std",
+                             "max.peaks.val.mean",
+                             "max.peaks.val.std",
+                             "min.peaks.val.mean",
+                             "min.peaks.val.std",
+                             "all.peaks.val.mean",
+                             "all.peaks.val.std",
+                             "max.min.diff.mean",
+                             "is_flat"
+                             ]) + "\n")
+        for f in os.listdir(directory):
             if not f.endswith("npy"):
                 continue
             print(f)
             phase_length = 2500
-            data = np.nansum(np.load(os.path.join("trajectories", f)), axis=0)
-            traj = process_info_data(data.reshape(1, -1), normalize=False)
-            if traj.shape[1] != 7500:
-                continue
+            data = np.nansum(np.load(os.path.join(directory, f)), axis=0)
+            traj = process_info_data(data.reshape(1, -1), average=False, normalize=False)
             for p, (start, stop) in zip(["relax", "train", "test", "entire"],
                                         [(0, 1), (1, 2), (2, 3), (0, 3)]):
-                y = traj[:, start * phase_length: stop * phase_length].reshape(1, -1)
-                peaks = _detect_peaks(y=y)
+                phase_traj = traj[:, start * phase_length: stop * phase_length]
+                phase_traj = moving_average(a=phase_traj, w=25).reshape(1, -1)
+                max_peaks = _detect_peaks(y=phase_traj, maximize=True)
+                max_distances = peaks_distance(peaks=max_peaks)
+                min_peaks = _detect_peaks(y=phase_traj, maximize=False)
+                min_distances = peaks_distance(peaks=min_peaks)
+                all_peaks = np.concatenate([max_peaks, min_peaks])
+                all_distances = peaks_distance(peaks=all_peaks)
+                z_score = corrected_zscore(data=phase_traj)
+                max_values = z_score[:, max_peaks.astype(np.int32)] if len(max_peaks) else np.zeros(0)
+                min_values = z_score[:, min_peaks.astype(np.int32)] if len(min_peaks) else np.zeros(0)
+                all_values = z_score[:, all_peaks.astype(np.int32)] if len(all_peaks) else np.zeros(0)
                 file.write(";".join([f.split(".")[0],
                                      f.split(".")[1],
                                      f.split(".")[2],
                                      p,
-                                     str(variance(y=y)),
-                                     str(trend(y=y)),
-                                     str(monotonicity(y=y)),
-                                     str(flatness(y=y)),
-                                     str(gini(y=y)),
-                                     str(peaks_number(peaks=peaks)),
-                                     str(peaks_distance(peaks=peaks))]) + "\n")
+                                     str(variance(y=phase_traj)),
+                                     str(trend(y=z_score)),
+                                     str(monotonicity(y=phase_traj)),
+                                     str(flatness(y=phase_traj)),
+                                     str(gini(y=phase_traj)),
+                                     str(peaks_number(peaks=max_peaks)),
+                                     str(max_distances[0]),
+                                     str(max_distances[1]),
+                                     str(peaks_number(peaks=min_peaks)),
+                                     str(min_distances[0]),
+                                     str(min_distances[1]),
+                                     str(peaks_number(peaks=all_peaks)),
+                                     str(all_distances[0]),
+                                     str(all_distances[1]),
+                                     str(max_values.mean()),
+                                     str(max_values.std()),
+                                     str(min_values.mean()),
+                                     str(min_values.std()),
+                                     str(all_values.mean()),
+                                     str(all_peaks.std()),
+                                     str(max_values.mean() - min_values.mean()),
+                                     str(np.all(phase_traj[0] == np.mean(phase_traj)))
+                                     ]) + "\n")
