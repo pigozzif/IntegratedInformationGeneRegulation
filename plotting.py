@@ -2,10 +2,12 @@ import os
 import pickle
 import random
 
+import jax
 import matplotlib.colors
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import sbmltoodejax
 from matplotlib.axes import Axes
 from scipy.ndimage import uniform_filter1d
 from scipy.spatial.distance import euclidean
@@ -21,7 +23,10 @@ from sklearn.metrics import silhouette_score
 
 from matplotlib import rc
 
-rc("text", usetex=True)
+from information import remove_autocorrelation, global_signal_regression, corrected_zscore
+from model import GeneRegulatoryNetwork
+
+# rc("text", usetex=True)
 rc("font", family="serif")
 COLORBREWER = ["#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00"]
 
@@ -52,6 +57,8 @@ def plot_trajectories(system_rollout, min_v, max_v, ax=None, by_species=False):
         fig, axes = plt.subplots(figsize=(10 * (system_rollout.shape[0] if by_species else 1), 5),
                                  nrows=1,
                                  ncols=system_rollout.shape[0] if by_species else 1)
+    else:
+        axes = ax
     for i, species in enumerate(system_rollout):
         (axes[i] if by_species else axes).plot(species)
         (axes[i] if by_species else axes).set_xlabel("time steps", fontsize=15)
@@ -75,6 +82,7 @@ def plot_info_measures(info, data, file_name):
     for ax in axes:
         ax.axvline(250000, color="red")
         ax.axvline(500000, color="red")
+        ax.axvline(750000, color="red")
     plot_trajectories(system_rollout=data,
                       ax=axes[0],
                       min_v=np.min(data[:, :250000 - 1]),
@@ -110,10 +118,10 @@ def load_data_ids(reduced=None):
     return np.array([int(file.split(".")[0]) for file in files])
 
 
-def process_info_data(data, samples=100, average=True, normalize=True):
+def process_info_data(data, samples=100, average=True, normalize=True, w=25):
     data = np.nan_to_num(data, neginf=0, posinf=0, copy=False)
     if average:
-        data = moving_average(data, w=25)
+        data = moving_average(data, w=w)
     if normalize:
         data = StandardScaler().fit_transform(np.nan_to_num(data, copy=False))
     data = np.nan_to_num(data, copy=False)
@@ -543,11 +551,11 @@ def lets_see():
     print(ct)
 
 
-def network_properties(method="kendall", cols=("emergence.test", "change")):
+def network_properties(method="kendall", cols=("emergence.test", "change"), file_name="networks.txt"):
     data = pd.read_csv("final.txt", sep=";")
     data.set_index(["model_id", "response_id", "circuit_id"], inplace=True)
     append_emergence(data=data)
-    networks = pd.read_csv("networks.txt", sep=";")
+    networks = pd.read_csv(file_name, sep=";")
     data = pd.merge(data, networks, on=["model_id"], how="left")
     data["change"] = ((data["emergence.test"] - data[
         "emergence.relax"]) / (data["emergence.relax"] + 1e-10))
@@ -576,15 +584,11 @@ def _plot_boxplot_on_ax(data, ax, y_label, title):
         median.set_color("red")
     ax.set_xticks(list(range(1, data.shape[1] + 1)),
                   [col.split(".")["." in col].replace("->", "$\\rightarrow$") for col in data],
-                  fontsize=15,
-                  weight="bold")
-    for tick in ax.get_yticklabels():
-        tick.set_fontweight("bold")
+                  fontsize=20)
     ax.set_ylabel(y_label,
-                  fontsize=15,
-                  weight="bold")
+                  fontsize=20)
     ax.set_title(title,
-                 fontsize=15,
+                 fontsize=20,
                  weight="bold")
 
 
@@ -595,14 +599,10 @@ def _plot_scatterplot_on_ax(x, z, labels, ax, title, alpha=1.0):
                    label=label,
                    color=COLORBREWER[i],
                    alpha=alpha)
-    for tick in ax.get_xticklabels():
-        tick.set_fontweight("bold")
-    for tick in ax.get_yticklabels():
-        tick.set_fontweight("bold")
     ax.set_title(title,
                  fontsize=15,
                  weight="bold")
-    legend = ax.legend()
+    legend = ax.legend(prop={"size": 10})
     for lh in legend.legend_handles:
         lh.set_alpha(1.0)
 
@@ -621,23 +621,78 @@ def _plot_heatmap_on_ax(x, y, values, ax):
     ax.set_yticks(np.arange(len(ct)), labels=ct.index)
     for i in range(ct.shape[0]):
         for j in range(ct.shape[1]):
-            v = round(float(ct.values[i, j]), 2)
-            ax.text(j, i, "N/A" if np.isnan(v) else str(v), ha="center", va="center", color="w")
+            v = round(float(ct.values[i, j]), 2 if abs(ct.values[i, j]) < 1 else 0)
+            ax.text(j, i, "N/A" if np.isnan(v) else str(v if v % 1 != 0 else int(v)),
+                    ha="center",
+                    va="center",
+                    color="w",
+                    fontsize=13)
+
+
+def _plot_errorbars_on_ax(bars, pos, ax, label, y_label, color, title):
+    ax.errorbar(pos, [b.median() for b in bars],
+                yerr=[b.std() for b in bars],
+                label=label,
+                fmt="o",
+                color=color,
+                capsize=10)
+    ax.set_title(title,
+                 fontsize=20,
+                 weight="bold")
+    ax.set_xticks([])
+    ax.set_ylabel(y_label,
+                  fontsize=20)
+    ax.legend(prop={"size": 15})
+
+
+def preprocess_data(data):
+    data = corrected_zscore(data, axis=1)
+    data = global_signal_regression(data)
+    data = remove_autocorrelation(data)
+    return data
+
+
+def plot_figure_0(biomodel_path="27.0.0.0"):
+    trajectory = np.load(os.path.join("new_trajectories", ".".join(["real", biomodel_path, "npy"])))
+    emergence = np.nansum(np.load(os.path.join("new_trajectories", ".".join([biomodel_path, "npy"]))),
+                          axis=0).reshape(1, -1)
+    trajectory = process_info_data(data=trajectory,
+                                   average=True,
+                                   normalize=False,
+                                   samples=100)
+    emergence = process_info_data(data=emergence,
+                                  average=True,
+                                  normalize=False,
+                                  samples=100)
+    fig, axes = plt.subplots(figsize=(8, 10), nrows=2, ncols=1)
+    axes[0].plot(np.log10(trajectory.T))
+    axes[1].plot(emergence.T)
+    flush_plot("figure_0.png")
 
 
 def plot_figure_1(measure="emergence", metric="dtw", seed=0):
     data = pd.read_csv("final.txt", sep=";")
     append_emergence(data=data)
+    data_random = pd.read_csv("final_random.txt", sep=";")
+    append_emergence(data=data_random)
+    _compute_paired_cols(data=data, measure=measure)
+    _compute_paired_cols(data=data_random, measure=measure)
     fig, axes = plt.subplots(figsize=(24, 5), nrows=1, ncols=3)
     _compute_paired_cols(data=data, measure=measure)
-    _plot_boxplot_on_ax(data=data[[col for col in data.columns if " -> " in col]],
-                        ax=axes[0],
-                        y_label="%",
-                        title="Change in emergence across phases")
+    for label, bar in zip(["biological", "random"], [data["relax->test"], data_random["relax->test"]]):
+        is_bio = label == "biological"
+        _plot_errorbars_on_ax(pos=[0.035] if is_bio else [0.065],
+                              bars=[filter_outliers(data=bar)],
+                              ax=axes[0],
+                              label=label,
+                              y_label="%",
+                              color="dimgray" if is_bio else "silver",
+                              title="A) Change in emergence across exps.")
+        axes[0].set_xlim(0, 0.1)
     _plot_boxplot_on_ax(data=data[[col for col in data.columns if measure in col]],
                         ax=axes[1],
                         y_label="nat",
-                        title="Average emergence per phase")
+                        title="B) Average emergence per phase")
     trajectories = np.load("{}.npy".format("_".join([metric, "split"])))
     tsne = TSNE(random_state=seed,
                 n_components=2,
@@ -648,12 +703,12 @@ def plot_figure_1(measure="emergence", metric="dtw", seed=0):
                             z=np.array([[0, 1, 2] for _ in range(len(trajectories) // 3)]).flatten(),
                             labels=PHASES,
                             ax=axes[2],
-                            title="t-SNE space of phases",
+                            title="C) t-SNE",
                             alpha=0.5)
     flush_plot("figure_1.png")
 
 
-def plot_figure_2(measure="emergence", width=0.25):
+def plot_figure_2(measure="emergence", width=0.05):
     data = pd.read_csv("final.txt", sep=";")
     append_emergence(data=data)
     data_random = pd.read_csv("final_random.txt", sep=";")
@@ -663,21 +718,22 @@ def plot_figure_2(measure="emergence", width=0.25):
     fig, axes = plt.subplots(figsize=(8, 5), nrows=1, ncols=1)
     for label, d in zip(["random", "biological"], [data_random, data]):
         is_bio = label == "biological"
-        bars = [filter_outliers(data=d["relax->train"]),
-                filter_outliers(data=d["train->test"]),
-                filter_outliers(data=d["relax->test"])]
+        bars = [  #filter_outliers(data=d["relax->train"]),
+            #filter_outliers(data=d["train->test"]),
+            filter_outliers(data=d["relax->test"])]
         axes.errorbar(np.arange(len(bars)) + (width if is_bio else 0), [b.median() for b in bars],
                       yerr=[b.std() for b in bars],
                       label=label,
                       fmt="o",
                       color="dimgray" if is_bio else "lightgray",
                       capsize=8)
-        axes.set_xticks(np.arange(len(bars)) + 0.125, ["relax $\\rightarrow$ train",
-                                                       "relax $\\rightarrow$ train",
-                                                       "relax $\\rightarrow$ train"])
-    axes.set_ylabel("%", fontsize=15)
+        axes.set_xticks(np.arange(len(bars)) + 0.125, [  #"relax $\\rightarrow$ train",
+            #"train $\\rightarrow$ test",
+            "relax $\\rightarrow$ test"],
+                        fontsize=15)
+    axes.set_ylabel("\%", fontsize=15)
     axes.legend(loc="lower right")
-    axes.set_title("Median change in emergence across experiments", fontsize=15)
+    axes.set_title(r"\textbf{Median change in emergence across experiments}", fontsize=20)
     flush_plot("figure_2.png")
 
 
@@ -691,7 +747,7 @@ def plot_figure_3():
                             z=data["label"].astype(np.int32),
                             labels=LABEL_NAMES.values(),
                             ax=axes,
-                            title="Automatically-discovered behaviors over t-SNE space of descriptors")
+                            title="Automatically-discovered behaviors over t-SNE plot of descriptors")
     flush_plot("figure_3.png")
 
 
@@ -710,9 +766,14 @@ def plot_figure_4(n_samples=5):
             traj = process_info_data(data=traj, average=False, normalize=False)[:, 5000:]
             y = moving_average(a=traj, w=25)
             axes[row][col].plot(y[0], linewidth=2, color=COLORBREWER[1])
-        axes[0][col].set_title(LABEL_NAMES[col], fontsize=35, y=1.2)
+        axes[0][col].set_title(LABEL_NAMES[col],
+                               fontsize=35,
+                               y=1.2,
+                               weight="bold")
     fig.text(0.5, 0.05, "time [s]", ha="center", fontsize=35)
-    fig.suptitle("Samples for each behavior", fontsize=50)
+    fig.suptitle("Samples for each behavior",
+                 fontsize=50,
+                 weight="bold")
     flush_plot("figure_4.png")
 
 
@@ -725,20 +786,28 @@ def plot_figure_5():
                    "all.peaks.distance.mean": "dist.\namong\npeaks",
                    "all.peaks.val.mean": "diff.\namong\npeaks",
                    "max.min.diff.mean": "range"}
-    n_rows = len(FEATURE_NAMES)
     n_cols = len(LABEL_NAMES)
-    fig, axes = plt.subplots(figsize=(8 * n_rows, 5 * n_cols), nrows=n_rows, ncols=n_cols)
+    n_rows = len(FEATURE_NAMES)
+    fig, axes = plt.subplots(figsize=(8 * n_cols, 5 * n_rows), nrows=n_rows, ncols=n_cols)
     for col, label in LABEL_NAMES.items():
         d = data[data["label"] == col]
         for row, feature in enumerate(FEATURE_NAMES):
-            axes[row][col].hist(d[feature], bins=75, edgecolor="black")
-            if row == 0:
-                axes[row][col].set_title(label, fontsize=35, y=1.2)
+            axes[row][col].hist(d[feature], bins=50, edgecolor="black")
             if col == 0:
-                axes[row][col].set_ylabel(feature_map[feature], fontsize=35, rotation=0)
-            axes[row][col].set_xlim(d[feature].min(), d[feature].max())
+                axes[row][col].set_ylabel(feature_map[feature],
+                                          fontsize=35,
+                                          weight="bold",
+                                          rotation=0)
+            if row == 0:
+                axes[row][col].set_title(label,
+                                         fontsize=35,
+                                         y=1.2,
+                                         weight="bold")
+            axes[row][col].set_xlim(data[feature].min(), data[feature].max())
             axes[row][col].yaxis.set_label_coords(-0.24, 0.35)
-    fig.suptitle("Descriptor distributions per behavior", fontsize=50)
+    fig.suptitle("Descriptor distributions per behavior",
+                 fontsize=50,
+                 weight="bold")
     flush_plot("figure_5.png")
 
 
@@ -751,15 +820,22 @@ def plot_figure_6():
     data["label"] = data["label"].map(LABEL_NAMES)
     data["gene.ontology"] = data.apply(lambda r: r["gene.ontology"].split(",")[0], axis=1)
     fig, axes = plt.subplots(figsize=(16, 11), nrows=2, ncols=2)
-    for row, ontology in enumerate(["biological.category", "gene.ontology"]):
+    for row, ontology in enumerate(["taxon", "gene.ontology"]):
         for col, val in enumerate([None, data["relax->test"] / 100.0]):
             _plot_heatmap_on_ax(x=data.label,
                                 y=data[ontology],
                                 values=val,
                                 ax=axes[row][col])
             if row == 0:
-                axes[row][col].set_title("Occurrence" if val is None else "Average emergence", fontsize=20, y=1.1)
-        axes[row][0].set_ylabel(ontology.replace(".", "\n"), fontsize=20, rotation=0)
+                axes[row][col].set_title("A) Occurrence" if val is None else
+                                         "B) Average emergence % change from relax to test",
+                                         fontsize=20,
+                                         y=1.1,
+                                         weight="bold")
+        axes[row][0].set_ylabel(ontology.replace(".", "\n"),
+                                fontsize=20,
+                                rotation=0,
+                                weight="bold")
         axes[row][0].yaxis.set_label_coords(-0.25, 0.4)
     flush_plot("figure_6.png")
 
@@ -782,9 +858,9 @@ if __name__ == "__main__":
     # plot_classes_strips_hardcoded()
     # classes_distribution(features_file_name="features.txt")
     # lets_see()
-    # network_properties()
+    network_properties(file_name="dynamics.txt")
+    # plot_figure_0()
     # plot_figure_1()
-    plot_figure_2()
     # plot_figure_3()
     # plot_figure_4()
     # plot_figure_5()
