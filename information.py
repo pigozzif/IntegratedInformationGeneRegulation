@@ -41,7 +41,7 @@ def local_entropy_1d(idx1, x):
 
 
 def local_entropy_nd(x):
-    # It gets grumpy if it's a 2D array with only one row
+    # It gets grumpy if it's a 2D y with only one row
     # so in that case, we kick it to local_entropy_1d.
     if x.shape[0] == 1:
         return local_entropy_1d(0, x)
@@ -114,7 +114,7 @@ def local_phi_r(phi_lattice):
     # Phir is the sum of a subset of integrated information atoms
     phir = phi_lattice.nodes[(((0,),), ((0, 1),))]["pi"]
     for atom in PHIR_ATOMS:
-        phir = phi_lattice.nodes[atom]["pi"]
+        phir += phi_lattice.nodes[atom]["pi"]
     return phir
 
 
@@ -137,7 +137,7 @@ def remove_autocorrelation(x):
 def global_signal_regression(x):
     n0 = x.shape[0]
     n1 = x.shape[1]
-    gsr = np.zeros((n0, n1), dtype=np.float64)  # Initialize GSR array
+    gsr = np.zeros((n0, n1), dtype=np.float64)  # Initialize GSR y
     mean = np.nanmean(x, axis=0)  # Compute global signal
     for i in range(n0):
         lr = linregress(mean, x[i])  # Linregress each channel against the GS
