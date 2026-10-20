@@ -2,37 +2,39 @@ import os
 import pickle
 import random
 
-import jax
 import matplotlib.colors
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import sbmltoodejax
-from matplotlib.axes import Axes
+import matplotlib.ticker as tkr
 from scipy.ndimage import uniform_filter1d
 from scipy.spatial.distance import euclidean
 from scipy.stats import mannwhitneyu, gaussian_kde, wilcoxon, levene, chi2_contingency, pearsonr, spearmanr, kendalltau
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA, KernelPCA
+from sklearn.dummy import DummyRegressor
+from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.manifold import TSNE, Isomap
-from sklearn.mixture import GaussianMixture
+from sklearn.model_selection import KFold, cross_val_score
+from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score
 
 # from al import AssociativeLearning
 
 from matplotlib import rc
+from sklearn.tree import DecisionTreeRegressor
 
 from information import remove_autocorrelation, global_signal_regression, corrected_zscore
 from model import GeneRegulatoryNetwork
 
-# rc("text", usetex=True)
 rc("font", family="serif")
+
 COLORBREWER = ["#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00"]
 
 PHASES = ["relax", "train", "test"]
 MEASURES = ["emergence", "synergy", "causation"]
-LABEL_NAMES = {0: "fuzzy", 1: "waking", 2: "waning", 3: "spiky", 4: "steppy"}
+LABEL_NAMES = {0: "homing", 1: "inflating", 2: "deflating", 3: "spiky", 4: "steppy"}
 FEATURE_NAMES = ["trend",
                  "monotonicity",
                  "flatness",
@@ -47,8 +49,10 @@ def moving_average(a, w):
     return uniform_filter1d(a, size=w)
 
 
-def flush_plot(plot_name):
-    plt.savefig(os.path.join("figures", plot_name))
+def flush_plot(plot_name, tight=False):
+    plt.savefig(os.path.join("figures", plot_name).replace(".png", ".png"),
+                bbox_inches="tight" if tight else None,
+                dpi=300)
     plt.close()
 
 
@@ -206,8 +210,9 @@ def dimensionality_reduction(seed, metric=None, split=False, reduced=None):
 
 
 def append_emergence(data):
-    for p in PHASES:
-        data[".".join(["emergence", p])] = data[".".join(["synergy", p])] + data[".".join(["causation", p])]
+    for p in PHASES + ["verify"]:
+        if ".".join(["synergy", p]) in data.columns:
+            data[".".join(["emergence", p])] = data[".".join(["synergy", p])] + data[".".join(["causation", p])]
 
 
 def plot_boxplots(file_name="final.txt"):
@@ -232,7 +237,10 @@ def plot_boxplots(file_name="final.txt"):
 
 
 def plot_boxplots_paired(file_name="final.txt"):
-    data = pd.read_csv(file_name, sep=";")
+    if "random" not in file_name:
+        data = pd.read_csv(file_name, sep=";")
+    else:
+        data = pd.read_csv("final_random.txt", sep=";", nrows=1889)
     append_emergence(data=data)
     fig, axes = plt.subplots(figsize=(20, 5), nrows=1, ncols=len(MEASURES))
     print("ALPHA: {}".format(0.05 / len(data)))
@@ -248,7 +256,7 @@ def plot_boxplots_paired(file_name="final.txt"):
         ax.set_ylabel("% change", fontsize=15)
         ax.set_title(measure, fontsize=15)
         for col in cols:
-            res = wilcoxon(col, alternative="two-sided")
+            res = wilcoxon(col, alternative="greater")
             print(col.name + ": " + str(res.pvalue))
         print("===========")
     flush_plot("boxplot_paired_random.png")
@@ -256,7 +264,7 @@ def plot_boxplots_paired(file_name="final.txt"):
 
 def compare_with_random(paired=False):
     data = pd.read_csv("final.txt", sep=";")
-    data_random = pd.read_csv("final_random.txt", sep=";")
+    data_random = pd.read_csv("final_random.txt", sep=";", nrows=1889)
     data_random.set_index(["model_id", "response_id", "circuit_id"], inplace=True)
     data.set_index(["model_id", "response_id", "circuit_id"], inplace=True)
     data_random = data_random[data_random.index.isin(data.index)]
@@ -296,11 +304,12 @@ def compare_with_random(paired=False):
         for c in cols:
             for random_c in random_cols:
                 if c.name == random_c.name:
+                    c, random_c = filter_outliers(c), filter_outliers(random_c)
                     if not paired:
-                        res = mannwhitneyu(c, random_c, alternative="two-sided")
+                        res = mannwhitneyu(c, random_c, alternative="greater")
                     else:
-                        res = wilcoxon(c, random_c, alternative="two-sided")
-                    print(" v. ".join([c.name, random_c.name]) + ": " + str(res.pvalue))
+                        res = mannwhitneyu(c, random_c, alternative="greater")
+                    print(" v. ".join([c.name, random_c.name]) + ": " + str(res.pvalue), f"{np.median(c)}±{np.std(c)}", f"{np.median(random_c)}±{np.std(random_c)}")
         print("===========")
     flush_plot("boxplot_all.png")
 
@@ -318,8 +327,8 @@ def test_variance_across_network(file_name="final_random.txt"):
         print("=========")
 
 
-def print_medians():
-    data = pd.read_csv("final.txt", sep=";")
+def print_medians(file_name):
+    data = pd.read_csv(file_name, sep=";")
     append_emergence(data=data)
     for measure in MEASURES:
         print(measure.upper())
@@ -466,7 +475,7 @@ def get_bar_counts(data, label_name="labels", by="phase"):
 def test_for_dependence(data, label_name, by="model_id"):
     norm_table, table = get_bar_counts(data=data, label_name=label_name, by=by)
     print(norm_table)
-    norm_table.drop(["sucrose biosynthetic process", "far-red light signaling pathway"], axis=1, inplace=True)
+    #     norm_table.drop(["sucrose biosynthetic process", "far-red light signaling pathway"], axis=1, inplace=True)
     table.fillna(value=0, inplace=True)
     print(chi2_contingency(observed=table.values))
 
@@ -551,7 +560,12 @@ def lets_see():
     print(ct)
 
 
-def network_properties(method="kendall", cols=("emergence.test", "change"), file_name="networks.txt"):
+def test_different_personalities(file_name="labels.txt"):
+    test_for_dependence(data=pd.read_csv(file_name, sep=";"),
+                        label_name="label")
+
+
+def test_network_properties(method="kendall", cols=("emergence.test", "change"), file_name="networks.txt"):
     data = pd.read_csv("final.txt", sep=";")
     data.set_index(["model_id", "response_id", "circuit_id"], inplace=True)
     append_emergence(data=data)
@@ -567,23 +581,53 @@ def network_properties(method="kendall", cols=("emergence.test", "change"), file
             func = method + "r" if "kendall" not in method else method + "tau"
             print(eval(func + "(data[\"{0}\"], data[\"{1}\"])".format(x_col, y_col)))
     print(corr)
+    return corr
+
+
+def test_predictability(measure="emergence", random_state=0):
+    data = pd.read_csv("final.txt", sep=";")
+    append_emergence(data=data)
+    _compute_paired_cols(data=data, measure=measure)
+    x, y = data["emergence.test"].values.reshape(-1, 1), data["relax->test"].values.reshape(-1, 1)
+    x = StandardScaler().fit_transform(x)
+    y = StandardScaler().fit_transform(y)
+    # reg = DecisionTreeRegressor(random_state=0).fit(x, y)
+    reg = MLPRegressor(random_state=random_state)
+    print(y.min(), y.max())
+    kf = KFold(n_splits=5, shuffle=True, random_state=random_state)
+    cv_scores = cross_val_score(reg, x, y, cv=kf, scoring="neg_mean_squared_error")
+    mse_scores = -cv_scores
+    print(f'Mean Squared Error for each fold: {mse_scores}')
+    print(f'Mean MSE across folds: {mse_scores.mean()}')
+    for strategy in ["mean", "median", "linear"]:
+        if strategy == "linear":
+            dummy = LinearRegression()
+        else:
+            dummy = DummyRegressor(strategy=strategy)
+        kf = KFold(n_splits=5, shuffle=True, random_state=random_state)
+        dummy_constant_cv_scores = cross_val_score(dummy, x, y, cv=kf, scoring="neg_mean_squared_error")
+        dummy_constant_mse = -dummy_constant_cv_scores
+        print("Mean Squared Error for DummyRegressor {0}: {1}".format(strategy,
+                                                                      dummy_constant_mse.mean()))
 
 
 def _compute_paired_cols(data, measure):
-    for i, p in enumerate(PHASES):
-        for j, other_p in enumerate(PHASES):
-            if i < j:
-                data["->".join([p, other_p])] = ((data[".".join([measure, other_p])] - data[
-                    ".".join([measure, p])]) / (data[".".join([measure, p])] + 1e-10)) * 100
+    for i, p in enumerate(PHASES + ["verify"]):
+        first_col = ".".join([measure, p])
+        for j, other_p in enumerate(PHASES + ["verify"]):
+            second_col = ".".join([measure, other_p])
+            if first_col in data.columns and second_col in data.columns and i < j:
+                data["->".join([p, other_p])] = ((data[second_col] - data[
+                    first_col]) / (data[first_col] + 1e-10)) * 100
 
 
-def _plot_boxplot_on_ax(data, ax, y_label, title):
-    boxplot = ax.boxplot([filter_outliers(data=data[col]) for col in data],
+def _plot_boxplot_on_ax(data, ax, y_label, title, x_labels):
+    boxplot = ax.boxplot(data,
                          flierprops={"marker": '+', "markerfacecolor": "gray"})
     for median in boxplot["medians"]:
         median.set_color("red")
-    ax.set_xticks(list(range(1, data.shape[1] + 1)),
-                  [col.split(".")["." in col].replace("->", "$\\rightarrow$") for col in data],
+    ax.set_xticks(list(range(1, len(data) + 1)),
+                  x_labels,
                   fontsize=20)
     ax.set_ylabel(y_label,
                   fontsize=20)
@@ -597,7 +641,7 @@ def _plot_scatterplot_on_ax(x, z, labels, ax, title, alpha=1.0):
         mask = np.arange(len(x))[z == i]
         ax.scatter(x[mask][:, 0], x[mask][:, 1],
                    label=label,
-                   color=COLORBREWER[i],
+                   color=COLORBREWER[int(i)],
                    alpha=alpha)
     ax.set_title(title,
                  fontsize=15,
@@ -616,7 +660,7 @@ def _plot_heatmap_on_ax(x, y, values, ax):
     ct.replace(to_replace=0.0, value=np.nan, inplace=True)
     cmap = matplotlib.colormaps["viridis"]
     cmap.set_bad(color="dimgray")
-    ax.imshow(ct.values, cmap=cmap)
+    pcm = ax.imshow(ct.values, cmap=cmap)
     ax.set_xticks(np.arange(len(ct.columns)), labels=ct.columns, rotation=45, ha="right", rotation_mode="anchor")
     ax.set_yticks(np.arange(len(ct)), labels=ct.index)
     for i in range(ct.shape[0]):
@@ -627,6 +671,7 @@ def _plot_heatmap_on_ax(x, y, values, ax):
                     va="center",
                     color="w",
                     fontsize=13)
+    return pcm
 
 
 def _plot_errorbars_on_ax(bars, pos, ax, label, y_label, color, title):
@@ -670,70 +715,58 @@ def plot_figure_0(biomodel_path="27.0.0.0"):
     flush_plot("figure_0.png")
 
 
-def plot_figure_1(measure="emergence", metric="dtw", seed=0):
+def plot_figure_1(measure="emergence"):
     data = pd.read_csv("final.txt", sep=";")
     append_emergence(data=data)
-    data_random = pd.read_csv("final_random.txt", sep=";")
+    data_random = pd.read_csv("final_random.txt", sep=";", nrows=1889)
     append_emergence(data=data_random)
     _compute_paired_cols(data=data, measure=measure)
     _compute_paired_cols(data=data_random, measure=measure)
+    fig, axes = plt.subplots(figsize=(16, 5), nrows=1, ncols=2)
+    _compute_paired_cols(data=data, measure=measure)
+    d1 = filter_outliers(data=data["relax->test"])
+    d2 = filter_outliers(data=data_random["relax->test"])
+    _plot_boxplot_on_ax([d1, d2],
+                        axes[0],
+                        "% change\nin causal emergence",
+                        "A)",
+                        ["biological\nGRNs", "random\nGRNs"])
+    axes[0].set_xticklabels(["biological\nGRNs", "random\nGRNs"], fontsize=15)
+    axes[0].set_ylabel("% change\nin causal emergence", fontsize=15)
+    axes[1].bar([1, 2], [19 / 29, 17 / 29])
+    axes[1].set_xticks([1, 2])
+    axes[1].set_ylabel("% of GRNs", fontsize=15)
+    axes[1].set_xticklabels(["with memory", "with increased\ncausal emergence"], fontsize=15)
+    axes[1].set_ylim(0.0, 1.0)
+    axes[1].set_title("B)", fontsize=20, weight="bold")
+    axes[1].yaxis.set_major_formatter(
+        tkr.FuncFormatter(lambda x, _: str(int(x * 100)))
+    )
+    flush_plot("figure_1_bis.png")
+
+
+def plot_figure_2():
+    activity = pd.read_csv("activity.txt", sep=";")
+    corr = pd.read_csv("corr.txt", sep=";")
     fig, axes = plt.subplots(figsize=(24, 5), nrows=1, ncols=3)
-    _compute_paired_cols(data=data, measure=measure)
-    for label, bar in zip(["biological", "random"], [data["relax->test"], data_random["relax->test"]]):
-        is_bio = label == "biological"
-        _plot_errorbars_on_ax(pos=[0.035] if is_bio else [0.065],
-                              bars=[filter_outliers(data=bar)],
-                              ax=axes[0],
-                              label=label,
-                              y_label="%",
-                              color="dimgray" if is_bio else "silver",
-                              title="A) Change in emergence across exps.")
-        axes[0].set_xlim(0, 0.1)
-    _plot_boxplot_on_ax(data=data[[col for col in data.columns if measure in col]],
-                        ax=axes[1],
-                        y_label="nat",
-                        title="B) Average emergence per phase")
-    trajectories = np.load("{}.npy".format("_".join([metric, "split"])))
-    tsne = TSNE(random_state=seed,
-                n_components=2,
-                metric="precomputed",
-                init="random")
-    x = tsne.fit_transform(trajectories)
-    _plot_scatterplot_on_ax(x=x,
-                            z=np.array([[0, 1, 2] for _ in range(len(trajectories) // 3)]).flatten(),
-                            labels=PHASES,
-                            ax=axes[2],
-                            title="C) t-SNE",
-                            alpha=0.5)
-    flush_plot("figure_1.png")
-
-
-def plot_figure_2(measure="emergence", width=0.05):
-    data = pd.read_csv("final.txt", sep=";")
-    append_emergence(data=data)
-    data_random = pd.read_csv("final_random.txt", sep=";")
-    append_emergence(data=data_random)
-    _compute_paired_cols(data=data, measure=measure)
-    _compute_paired_cols(data=data_random, measure=measure)
-    fig, axes = plt.subplots(figsize=(8, 5), nrows=1, ncols=1)
-    for label, d in zip(["random", "biological"], [data_random, data]):
-        is_bio = label == "biological"
-        bars = [  #filter_outliers(data=d["relax->train"]),
-            #filter_outliers(data=d["train->test"]),
-            filter_outliers(data=d["relax->test"])]
-        axes.errorbar(np.arange(len(bars)) + (width if is_bio else 0), [b.median() for b in bars],
-                      yerr=[b.std() for b in bars],
-                      label=label,
-                      fmt="o",
-                      color="dimgray" if is_bio else "lightgray",
-                      capsize=8)
-        axes.set_xticks(np.arange(len(bars)) + 0.125, [  #"relax $\\rightarrow$ train",
-            #"train $\\rightarrow$ test",
-            "relax $\\rightarrow$ test"],
-                        fontsize=15)
-    axes.set_ylabel("\%", fontsize=15)
-    axes.legend(loc="lower right")
-    axes.set_title(r"\textbf{Median change in emergence across experiments}", fontsize=20)
+    activity.fillna(value=0.0, inplace=True)
+    titles = ["A) Structure", "B) Function", "C) Activity"]
+    for i, data in enumerate([corr["spearman"][corr["type"] == "structure"],
+                              corr["spearman"][corr["type"] == "function"],
+                              activity["spearman"]]):
+        _plot_boxplot_on_ax(data=[data],
+                            ax=axes[i],
+                            y_label="",
+                            title=titles[i],
+                            x_labels=[])
+        if i == 0:
+            axes[i].set_ylabel("Kendall's $\\tau$", fontsize=25)
+        else:
+            axes[i].set_yticks([])
+        axes[i].set_ylim(-1.0, 1.0)
+        axes[i].hlines(y=0.0, xmin=0.5, xmax=1.5, color="black", alpha=0.5)
+        axes[i].set_xlim(0.5, 1.5)
+    fig.tight_layout()
     flush_plot("figure_2.png")
 
 
@@ -753,7 +786,10 @@ def plot_figure_3():
 
 def plot_figure_4(n_samples=5):
     n_classes = len(LABEL_NAMES)
-    fig, axes = plt.subplots(figsize=(8 * n_classes, 5 * n_samples), nrows=n_samples, ncols=n_classes, sharex=True)
+    fig, axes = plt.subplots(figsize=(10 * n_classes, 6 * n_samples),
+                             nrows=n_samples,
+                             ncols=n_classes,
+                             sharex=True)
     circuits = {0: ["50.3.107", "23.1.31", "204.1.4", "35.1.1", "37.4.4"],
                 1: ["3.0.0", "26.0.27", "50.3.37", "10.0.4", "50.3.0"],
                 2: ["10.3.7", "69.1.18", "50.3.65", "50.3.22", "50.3.66"],
@@ -766,11 +802,19 @@ def plot_figure_4(n_samples=5):
             traj = process_info_data(data=traj, average=False, normalize=False)[:, 5000:]
             y = moving_average(a=traj, w=25)
             axes[row][col].plot(y[0], linewidth=2, color=COLORBREWER[1])
+            axes[row][col].tick_params(axis="both", which="major", labelsize=20)
+            axes[row][col].yaxis.set_major_formatter(
+                tkr.FuncFormatter(lambda x, _: f'{round(x, 4)}')
+            )
         axes[0][col].set_title(LABEL_NAMES[col],
                                fontsize=35,
                                y=1.2,
                                weight="bold")
-    fig.text(0.5, 0.05, "time [s]", ha="center", fontsize=35)
+        axes[-1][col].set_xticks([0, 500, 1000, 1500, 2000, 2500])
+    axes[2][0].set_ylabel("Causal Emergence [nats]",
+                          fontsize=40)
+    axes[2][0].yaxis.set_label_coords(-0.325, 0.4)
+    fig.text(0.5, 0.05, "simulated time [s]", ha="center", fontsize=40)
     fig.suptitle("Samples for each behavior",
                  fontsize=50,
                  weight="bold")
@@ -797,14 +841,14 @@ def plot_figure_5():
                 axes[row][col].set_ylabel(feature_map[feature],
                                           fontsize=35,
                                           weight="bold",
-                                          rotation=0)
+                                          rotation=45)
             if row == 0:
                 axes[row][col].set_title(label,
                                          fontsize=35,
                                          y=1.2,
                                          weight="bold")
             axes[row][col].set_xlim(data[feature].min(), data[feature].max())
-            axes[row][col].yaxis.set_label_coords(-0.24, 0.35)
+            axes[row][col].yaxis.set_label_coords(-0.35, 0.35)
     fig.suptitle("Descriptor distributions per behavior",
                  fontsize=50,
                  weight="bold")
@@ -822,10 +866,11 @@ def plot_figure_6():
     fig, axes = plt.subplots(figsize=(16, 11), nrows=2, ncols=2)
     for row, ontology in enumerate(["taxon", "gene.ontology"]):
         for col, val in enumerate([None, data["relax->test"] / 100.0]):
-            _plot_heatmap_on_ax(x=data.label,
-                                y=data[ontology],
-                                values=val,
-                                ax=axes[row][col])
+            pcm = _plot_heatmap_on_ax(x=data.label,
+                                      y=data[ontology],
+                                      values=val,
+                                      ax=axes[row][col])
+            fig.colorbar(pcm, ax=axes[row][col])
             if row == 0:
                 axes[row][col].set_title("A) Occurrence" if val is None else
                                          "B) Average emergence % change from relax to test",
@@ -840,6 +885,32 @@ def plot_figure_6():
     flush_plot("figure_6.png")
 
 
+def plot_am():
+    fig, axes = plt.subplots(figsize=(25, 5), nrows=1, ncols=2)
+    axes[0].imshow(plt.imread("figures/pavlovian.png"))
+    axes[1].imshow(plt.imread("figures/conditioning.png"))
+    axes[0].set_title("A", weight="bold", fontsize=20)
+    axes[1].set_title("B", weight="bold", fontsize=20)
+    for ax in axes:
+        ax.axis("off")
+    plt.subplots_adjust(wspace=-0.5)
+    flush_plot("figure_am.png", tight=True)
+    fig, axes = plt.subplots(figsize=(25, 10), nrows=2, ncols=1)
+    axes[0].imshow(plt.imread("figures/figure_am.png"))
+    axes[1].imshow(plt.imread("figures/before_during_after.png"))
+    axes[1].set_title("C Causal emergence before, during, and after associative training in GRNs", weight="bold",
+                      fontsize=20)
+    axes[1].text(425, 50, "relax", fontsize=22)
+    axes[1].text(830, 50, "train", fontsize=22)
+    axes[1].text(1225, 50, "test", fontsize=22)
+    axes[1].text(45, 175, "in most\nnetworks,\nit increases!", fontsize=20)
+    axes[1].text(45, 340, "(not in\nthis one)", fontsize=20)
+    for ax in axes:
+        ax.axis("off")
+    plt.subplots_adjust(wspace=-0.5)
+    flush_plot("figure_0.png", tight=True)
+
+
 if __name__ == "__main__":
     random.seed(0)
     np.random.seed(0)
@@ -847,21 +918,25 @@ if __name__ == "__main__":
     # save_similarity_matrix(metric="dtw", seed=args.seed, split=True, reduced=None)
     # dimensionality_reduction(seed=args.seed, metric=None, split=False, reduced=10)
     # dimensionality_reduction(seed=args.seed, metric=None, split=True, reduced=2)
-    # plot_boxplots(file_name="final.txt" if not args.random else "final_random.txt")
-    # plot_boxplots_paired(file_name="final.txt" if not args.random else "final_random.txt")
+    # plot_boxplots(file_name="final.txt")# if not args.random else "final_random.txt")
+    # plot_boxplots_paired(file_name="final.txt")# if not args.random else "final_random.txt")
     # compare_with_random(paired=True)
     # test_variance_across_network()
-    # print_medians()
     # plot_am(seed=args.seed)
     # plot_features_dr()
     # plot_classes_strips()
     # plot_classes_strips_hardcoded()
     # classes_distribution(features_file_name="features.txt")
     # lets_see()
-    network_properties(file_name="dynamics.txt")
+    # test_different_personalities()
+    # test_network_properties(method="pearson", file_name="networks.txt")
+    # test_predictability()
+    # create_corr_file()
     # plot_figure_0()
-    # plot_figure_1()
-    # plot_figure_3()
-    # plot_figure_4()
-    # plot_figure_5()
-    # plot_figure_6()
+    plot_figure_1()
+    plot_figure_2()
+    plot_figure_3()
+    plot_figure_4()
+    plot_figure_5()
+    plot_figure_6()
+    # plot_am()
