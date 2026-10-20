@@ -742,7 +742,7 @@ def plot_figure_1(measure="emergence"):
     axes[1].yaxis.set_major_formatter(
         tkr.FuncFormatter(lambda x, _: str(int(x * 100)))
     )
-    flush_plot("figure_1_bis.png")
+    flush_plot("figure_1.png")
 
 
 def plot_figure_2():
