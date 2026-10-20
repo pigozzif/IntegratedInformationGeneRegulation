@@ -726,13 +726,16 @@ def plot_figure_1(measure="emergence"):
     _compute_paired_cols(data=data, measure=measure)
     d1 = filter_outliers(data=data["relax->test"])
     d2 = filter_outliers(data=data_random["relax->test"])
-    _plot_boxplot_on_ax([d1, d2],
+    _plot_boxplot_on_ax([d1, d2],  # [d1.median() + (d1 - d1.median()) / 2, d2.median() + (d2 - d2.median()) / 2],
                         axes[0],
                         "% change\nin causal emergence",
                         "A)",
                         ["biological\nGRNs", "random\nGRNs"])
     axes[0].set_xticklabels(["biological\nGRNs", "random\nGRNs"], fontsize=15)
     axes[0].set_ylabel("% change\nin causal emergence", fontsize=15)
+    # axes[0].plot([1, 1, 2, 2], [310, 315, 315, 310], color="black")
+    # axes[0].text(1.5, 315, "***", ha="center", va="bottom", fontsize=15)
+    # axes[0].set_ylim(-50, 350)
     axes[1].bar([1, 2], [19 / 29, 17 / 29])
     axes[1].set_xticks([1, 2])
     axes[1].set_ylabel("% of GRNs", fontsize=15)
