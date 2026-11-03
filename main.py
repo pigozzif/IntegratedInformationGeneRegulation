@@ -7,10 +7,10 @@ from al import AssociativeLearning
 from information import mutual_information_matrix, minimum_information_bipartition, local_phi_id, local_phi_r, \
     global_signal_regression, remove_autocorrelation, corrected_zscore, local_o_information, local_total_correlation, \
     local_tse_complexity, local_s_information
-from plotting import plot_info_measures
 from utils import parse_args, set_seed
 
 MEASURES = ["synergy", "causation", "redundancy", "integrated", "emergence"]
+PHASES = ["relax", "stimulate", "test"]
 
 
 @dataclass
@@ -23,6 +23,13 @@ class ExperimentData(object):
     plots_dir: str
 
 
+circuits = ["50.3.107", "23.1.31", "204.1.4", "35.1.1", "37.4.4",
+            "3.0.0", "26.0.27", "50.3.37", "10.0.4", "50.3.0",
+            "10.3.7", "69.1.18", "50.3.65", "50.3.22", "50.3.66",
+            "50.3.96", "16.1.3", "631.1.0", "631.1.8", "35.2.13",
+            "69.1.22", "69.1.25", "26.2.19", "69.1.25", "26.2.19"]
+
+
 def preprocess_data(data):
     data = corrected_zscore(data, axis=1)
     data = global_signal_regression(data)
@@ -33,6 +40,8 @@ def preprocess_data(data):
 def compute_info_for_r(al, exp_data, response):
     if not al.mem_circuits[response]:
         return
+    # elif not any([c.startswith(".".join([str(al.i), str(response), ""])) for c in circuits]):
+    #     return
     cs_list = [circuit for circuit in al.mem_circuits[response] if not circuit.is_ucs]
     idx = 0
     for ucs_circuit in [circuit for circuit in al.mem_circuits[response] if circuit.is_ucs]:
@@ -43,34 +52,35 @@ def compute_info_for_r(al, exp_data, response):
                 processed_data = preprocess_data(data)
                 info = compute_circuit_info(data=processed_data)
                 if not exp_data.random:
-                    plot_info_measures(info=info,
-                                       data=data,
-                                       file_name=os.path.join(exp_data.plots_dir,
-                                                              ".".join(
-                                                                  [str(exp_data.model_id),
-                                                                   str(response),
-                                                                   str(idx),
-                                                                   "png"])))
+                    pass
+                    # plot_info_measures(info=info,
+                    #                    data=data,
+                    #                    file_name=os.path.join(exp_data.plots_dir,
+                    #                                           ".".join(
+                    #                                               [str(exp_data.model_id),
+                    #                                                str(response),
+                    #                                                str(idx),
+                    #                                                "png"])))
                 save_info_measures(info=info,
                                    exp_data=exp_data,
                                    response=response,
                                    circuit_id=idx)
-                save_trajectory(info=info,
-                                f=os.path.join(exp_data.trajectories_dir,
-                                               ".".join([str(exp_data.model_id),
-                                                         str(response),
-                                                         str(idx),
-                                                         str(exp_data.seed),
-                                                         "npy"])))
+                # save_trajectory(info=info,
+                #                 f=os.path.join(exp_data.trajectories_dir,
+                #                                ".".join([str(exp_data.model_id),
+                #                                          str(response),
+                #                                          str(idx),
+                #                                          str(exp_data.seed),
+                #                                          "npy"])))
                 idx += 1
                 del processed_data, data, info
 
 
 def save_info_measures(info, exp_data, response, circuit_id):
-    with open("final_random.txt", "a") as f:
+    with open(exp_data.info_file, "a") as f:
         measures = [exp_data.seed, exp_data.model_id, response, circuit_id]
         period = 250000
-        for start in range(period, period * 3 + 1, period):
+        for start in range(0, period * len(PHASES) + 1, period):
             for measure in MEASURES:
                 measures.append(np.nanmedian(info[measure][start: start + period]))
         f.write(";".join([str(measure) for measure in measures]) + "\n")
@@ -87,12 +97,15 @@ def train_associative(al, ucs_circuit, cs_circuit):
     e1 = al.stimulate(al.genes_ss, al.w_ss, [ucs_circuit.stimulus, cs_circuit.stimulus],
                       [ucs_circuit.stimulus_reg, cs_circuit.stimulus_reg])
     train_data["e1"] = e1
-    up_down_r = al.is_r_regulated(e1, cs_circuit.response)
+    up_down_r = al.is_r_regulated(e1=e1,
+                                  response=cs_circuit.response)
     if int(up_down_r) != 0:
         e2 = al.stimulate(e1.ys[:, -1], e1.ws[:, -1], cs_circuit.stimulus, cs_circuit.stimulus_reg)
         is_mem = al.is_memory(e1, e2, ucs_circuit.response, up_down_r)
         train_data["is_mem"] = is_mem
         train_data["e2"] = e2
+        e3 = al.stimulate(e2.ys[:, -1], e2.ws[:, -1], [], [])
+        train_data["e3"] = e3
     return train_data
 
 
@@ -139,13 +152,13 @@ if __name__ == "__main__":
                                      random=arguments.random,
                                      info_file="final.txt" if not arguments.random else "final_random.txt",
                                      trajectories_dir="trajectories" if not arguments.random else "trajectories_random",
-                                     plots_dir="plots_final" if not arguments.random else "plots_random")
+                                     plots_dir="plots" if not arguments.random else "plots_random")
 
     if not os.path.exists(experiment_data.info_file):
         with open(experiment_data.info_file, "w") as file:
             header = ["seed", "model_id", "response_id", "circuit_id"]
             for m in MEASURES:
-                for p in ["relax", "stimulate", "test"]:
+                for p in PHASES:
                     header.append(".".join([m, str(p)]))
             file.write(";".join(header) + "\n")
 
