@@ -80,8 +80,8 @@ def save_info_measures(info, exp_data, response, circuit_id):
     with open(exp_data.info_file, "a") as f:
         measures = [exp_data.seed, exp_data.model_id, response, circuit_id]
         period = 250000
-        for start in range(0, period * len(PHASES) + 1, period):
-            for measure in MEASURES:
+        for measure in MEASURES:
+            for start in range(0, period * len(PHASES), period):
                 measures.append(np.nanmedian(info[measure][start: start + period]))
         f.write(";".join([str(measure) for measure in measures]) + "\n")
 
